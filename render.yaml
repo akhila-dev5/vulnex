@@ -1,0 +1,20 @@
+# Render config for the Vulnex backend (FastAPI).
+# Free web service. Note: SQLite on Render is ephemeral (resets on redeploy),
+# so for persistent data set DATABASE_URL to a Supabase/Postgres connection
+# string (postgresql+psycopg://user:pass@host:5432/db).
+
+services:
+  - type: web
+    name: vulnex-api
+    runtime: python
+    rootDir: cve-platform
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn backend.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: CORS_ORIGINS
+        # Set this to your Netlify site origin (no trailing slash).
+        value: https://YOUR-SITE.netlify.app
+      - key: DATABASE_URL
+        # Set to your Supabase/Postgres URL for persistence; leave unset to use SQLite.
+        sync: false

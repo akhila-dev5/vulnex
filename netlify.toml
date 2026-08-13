@@ -1,0 +1,15 @@
+# Netlify config for the Vulnex frontend (static, no build step).
+# The frontend lives in cve-platform/frontend and is served as-is.
+# Before deploying, set PROD_API_BASE_URL in
+# cve-platform/frontend/assets/js/config.js to your backend (Render) URL.
+
+[build]
+  publish = "cve-platform/frontend"
+  command = ""
+
+# SPA-style fallback is not needed (multi-page static site), but ensure
+# clean 404s serve the app shell.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
