@@ -1,0 +1,112 @@
+name: CVE Scan
+
+# NOTE: This workflow must live at the REPO ROOT (.github/workflows/) to run.
+# Scanner scripts live in cve-scanner/, so the job runs there via working-directory.
+
+on:
+  schedule:
+    - cron: "0 6 * * *"        # daily at 06:00 UTC
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cve-scan
+  cancel-in-progress: false
+
+env:
+  # Personal fork only — never the real microsoft/azurelinux.
+  AZL_REPO: https://github.com/akhila-guruju/azurelinux-test.git
+  AZL_REF: "3.0"                            # primary branch: versions come from here
+  AZL_PATCH_REFS: "3.0-dev fasttrack/3.0"   # excluded if patched in any of these
+  AZL_VER: "3"
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: cve-scanner
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install rpm tools (rpmspec) and Grype
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y rpm
+          curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh \
+            | sh -s -- -b /usr/local/bin
+
+      - name: Fetch fork specs (sparse + shallow)
+        run: |
+          rm -rf azl-src
+          git clone --no-checkout --depth 1 --filter=blob:none \
+            --branch "$AZL_REF" "$AZL_REPO" azl-src
+          cd azl-src && git sparse-checkout set SPECS && git checkout
+
+      - name: Parse specs -> inventory.json
+        run: |
+          python3 parse_specs.py --repo azl-src --dirs SPECS \
+            --azl "$AZL_VER" --out-json inventory.json --out-csv inventory.csv
+
+      - name: Cross-branch patched check (exclude CVEs fixed in any branch)
+        run: |
+          extras=""
+          for ref in $AZL_PATCH_REFS; do
+            safe=$(echo "$ref" | tr '/' '-')
+            rm -rf "azl-$safe"
+            git clone --no-checkout --depth 1 --filter=blob:none \
+              --branch "$ref" "$AZL_REPO" "azl-$safe"
+            (cd "azl-$safe" && git sparse-checkout set SPECS && git checkout)
+            python3 parse_specs.py --repo "azl-$safe" --dirs SPECS \
+              --azl "$AZL_VER" --out-json "inv-$safe.json" --out-csv "inv-$safe.csv"
+            extras="$extras inv-$safe.json"
+          done
+          python3 merge_patched.py --base inventory.json --extra $extras
+
+      - name: Build SBOM (CycloneDX)
+        run: |
+          MAP=""
+          [ -f config/name_map.csv ] && MAP="--name-map config/name_map.csv"
+          python3 to_cyclonedx.py --in inventory.json --out sbom.json $MAP
+
+      - name: Generate Grype ignore config (already-patched CVEs)
+        run: |
+          python3 gen_grype_config.py --in inventory.json --out .grype.yaml
+
+      - name: Scan SBOM with Grype
+        run: |
+          grype sbom:sbom.json -c .grype.yaml --by-cve -o json=grype.json || true
+
+      - name: Build results.json
+        run: |
+          python3 make_report.py --in grype.json --outdir site
+
+      - name: Enrich findings with NVD (patch URLs, CVSS, references)
+        env:
+          NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
+        run: |
+          python3 enrich_nvd.py --in site/results.json --out site/results.json
+
+      - name: Sync findings to Vulnex platform
+        env:
+          PLATFORM_API_URL: ${{ secrets.PLATFORM_API_URL }}
+          SYNC_TOKEN: ${{ secrets.SYNC_TOKEN }}
+        run: |
+          if [ -z "$PLATFORM_API_URL" ]; then
+            echo "PLATFORM_API_URL secret not set; skipping platform sync."
+            exit 0
+          fi
+          python3 ../cve-platform/scripts/sync_from_scanner.py \
+            --in site/results.json --api "$PLATFORM_API_URL" --branch "$AZL_REF"
+
+      - name: Clean up cloned specs
+        if: always()
+        run: rm -rf azl-src azl-*

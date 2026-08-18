@@ -1,3 +1,6 @@
 # Python compiled bytecode (regenerated automatically from source)
 __pycache__/
 *.pyc
+
+# Local environment files (never commit secrets)
+.env
