@@ -4,3 +4,6 @@ __pycache__/
 
 # Local environment files (never commit secrets)
 .env
+
+# Local SQLite dev database (regenerated; real data lives in Postgres/Supabase)
+*.db
