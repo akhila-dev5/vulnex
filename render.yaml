@@ -18,3 +18,30 @@ services:
       - key: DATABASE_URL
         # Set to your Supabase/Postgres URL for persistence; leave unset to use SQLite.
         sync: false
+      # GitHub usernames allowed to manage users/assignments.
+      - key: ADMIN_USERNAMES
+        value: akhila-dev5,akhila-guruju
+      # Long random string used to sign session tokens (Render generates one).
+      - key: SESSION_SECRET
+        generateValue: true
+      # Both OAuth Apps must register this exact Authorization callback URL.
+      - key: GITHUB_OAUTH_CALLBACK_URL
+        # e.g. https://vulnex-rknw.onrender.com/api/auth/github/callback
+        sync: false
+      # Where to send the browser after login (your frontend page origin).
+      - key: FRONTEND_URL
+        sync: false
+      # --- Admin 1 (akhila-dev5) OAuth App ---
+      - key: ADMIN1_USERNAME
+        value: akhila-dev5
+      - key: ADMIN1_OAUTH_CLIENT_ID
+        sync: false
+      - key: ADMIN1_OAUTH_CLIENT_SECRET
+        sync: false
+      # --- Admin 2 (akhila-guruju) OAuth App ---
+      - key: ADMIN2_USERNAME
+        value: akhila-guruju
+      - key: ADMIN2_OAUTH_CLIENT_ID
+        sync: false
+      - key: ADMIN2_OAUTH_CLIENT_SECRET
+        sync: false
