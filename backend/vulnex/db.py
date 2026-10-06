@@ -115,6 +115,14 @@ CREATE TABLE IF NOT EXISTS assignments (
     UNIQUE(cve_id, package_name)
 );
 
+CREATE TABLE IF NOT EXISTS assignment_comments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    assignment_id INTEGER NOT NULL,
+    author TEXT,
+    body TEXT NOT NULL,
+    created_at TEXT
+);
+
 CREATE TABLE IF NOT EXISTS cve_cache (
     cve_id TEXT PRIMARY KEY,
     payload TEXT,
@@ -128,6 +136,7 @@ CREATE INDEX IF NOT EXISTS idx_findings_cve ON findings(cve_id);
 CREATE INDEX IF NOT EXISTS idx_patches_package ON patches(package_name);
 CREATE INDEX IF NOT EXISTS idx_packages_name ON packages(name);
 CREATE INDEX IF NOT EXISTS idx_findings_spec ON findings(branch, spec_path);
+CREATE INDEX IF NOT EXISTS idx_comments_assignment ON assignment_comments(assignment_id);
 """
 
 
@@ -582,7 +591,64 @@ def create_assignment(
 
 
 def list_assignments(conn: sqlite3.Connection) -> list[dict]:
-    return _rows(conn, "SELECT * FROM assignments ORDER BY created_at DESC")
+    """Queue rows with their triage comments attached in one grouped query."""
+    rows = _rows(conn, "SELECT * FROM assignments ORDER BY created_at DESC")
+    if not rows:
+        return rows
+    ids = [r["id"] for r in rows]
+    marks = ",".join("?" * len(ids))
+    by_assignment: dict[int, list[dict]] = {}
+    for c in _rows(
+        conn,
+        f"SELECT * FROM assignment_comments WHERE assignment_id IN ({marks}) ORDER BY id",
+        ids,
+    ):
+        by_assignment.setdefault(c["assignment_id"], []).append(c)
+    for r in rows:
+        r["comments"] = by_assignment.get(r["id"], [])
+    return rows
+
+
+def get_assignment(conn: sqlite3.Connection, assignment_id: int) -> dict | None:
+    row = conn.execute("SELECT * FROM assignments WHERE id = ?", (assignment_id,)).fetchone()
+    if not row:
+        return None
+    record = dict(row)
+    record["comments"] = _rows(
+        conn,
+        "SELECT * FROM assignment_comments WHERE assignment_id = ? ORDER BY id",
+        (assignment_id,),
+    )
+    return record
+
+
+def add_comment(
+    conn: sqlite3.Connection,
+    assignment_id: int,
+    body: str,
+    author: str = "editor",
+) -> dict | None:
+    """Append an editor triage comment to a queued assignment."""
+    now = utcnow()
+    cursor = conn.execute(
+        "INSERT INTO assignment_comments (assignment_id, author, body, created_at) "
+        "VALUES (?, ?, ?, ?)",
+        (assignment_id, author, body, now),
+    )
+    conn.execute("UPDATE assignments SET updated_at = ? WHERE id = ?", (now, assignment_id))
+    conn.commit()
+    row = conn.execute(
+        "SELECT * FROM assignment_comments WHERE id = ?", (cursor.lastrowid,)
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def comments_for(conn: sqlite3.Connection, assignment_id: int) -> list[dict]:
+    return _rows(
+        conn,
+        "SELECT * FROM assignment_comments WHERE assignment_id = ? ORDER BY id",
+        (assignment_id,),
+    )
 
 
 def update_assignment(conn: sqlite3.Connection, assignment_id: int, status: str) -> dict | None:

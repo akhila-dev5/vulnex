@@ -45,6 +45,35 @@ CORROBORATION_ECOSYSTEMS = [
 # The AI patch-remediation workflow will only ever target this repository.
 PATCH_TARGET_REPO = os.environ.get("VULNEX_PATCH_TARGET_REPO", "akhila-dev5/azurelinux-test")
 
+# This project's own repository, linked from the dashboard.
+PROJECT_REPO = os.environ.get("VULNEX_PROJECT_REPO", "akhila-dev5/vulnex")
+PROJECT_REPO_URL = os.environ.get(
+    "VULNEX_PROJECT_REPO_URL", f"https://github.com/{PROJECT_REPO}"
+)
+# Hosted read-only showcase URL, shown to visitors once Pages/Vercel is live.
+DEMO_URL = os.environ.get("VULNEX_DEMO_URL", "")
+
+# Portfolio metadata rendered on the Project page.
+AUTHOR_NAME = os.environ.get("VULNEX_AUTHOR_NAME", "Akhila Guruju")
+AUTHOR_URL = os.environ.get("VULNEX_AUTHOR_URL", "")
+AUTHOR_GITHUB = os.environ.get("VULNEX_AUTHOR_GITHUB", f"https://github.com/{REPO_OWNER}")
+# Rendered only when set, so nothing is claimed on the author's behalf.
+AUTHOR_TAGLINE = os.environ.get("VULNEX_AUTHOR_TAGLINE", "")
+
+# Access tiers --------------------------------------------------------------
+# Two roles share one dashboard:
+#   viewer  read-only showcase (no assigning, no triage comments)
+#   editor  can queue work and leave triage comments
+# Setting VULNEX_EDITOR_KEY requires that key for every write. With it unset the
+# server stays in local "open editor" mode so development is never blocked; the
+# static Pages export is always a viewer.
+EDITOR_KEY = os.environ.get("VULNEX_EDITOR_KEY")
+
+
+def editor_key_required() -> bool:
+    """True when writes must present ``X-VULNEX-Key: $VULNEX_EDITOR_KEY``."""
+    return bool(EDITOR_KEY)
+
 # Endpoints ----------------------------------------------------------------
 GITHUB_API = "https://api.github.com"
 GITHUB_RAW = "https://raw.githubusercontent.com"
@@ -94,3 +123,23 @@ def github_token() -> str | None:
 
 def user_agent() -> str:
     return _USER_AGENT
+
+
+def repository_metadata() -> dict:
+    """Repository + portfolio metadata shared by the API and the static export."""
+    return {
+        "owner": REPO_OWNER,
+        "repo": REPO_NAME,
+        "branches": list(DEFAULT_BRANCHES),
+        "ecosystem": OSV_ECOSYSTEM,
+        "patch_target_repo": PATCH_TARGET_REPO,
+        "project_repo": PROJECT_REPO,
+        "project_url": PROJECT_REPO_URL,
+        "demo_url": DEMO_URL,
+        "author": {
+            "name": AUTHOR_NAME,
+            "url": AUTHOR_URL,
+            "github": AUTHOR_GITHUB,
+            "tagline": AUTHOR_TAGLINE,
+        },
+    }

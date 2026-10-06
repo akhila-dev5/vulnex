@@ -32,6 +32,7 @@ Python 3.10+ · FastAPI · SQLite · build-free vanilla JS · GitHub Actions · 
 - [CLI reference](#cli-reference)
 - [API reference](#api-reference)
 - [Dashboard tour](#dashboard-tour)
+- [Sharing the dashboard and the two access tiers](#sharing-the-dashboard-and-the-two-access-tiers)
 - [Scheduled scanning and GitHub Pages](#scheduled-scanning-and-github-pages)
 - [Patch automation interface](#patch-automation-interface)
 - [Tests](#tests)
@@ -278,7 +279,7 @@ git clone https://github.com/akhila-dev5/vulnex.git
 cd vulnex
 
 make install            # creates backend/.venv and installs runtime + dev deps
-make test               # 33 tests
+make test               # 41 tests
 make serve              # http://localhost:8000  (live dashboard + Scan Now)
 ```
 
@@ -345,10 +346,12 @@ vulnex export   Write the static GitHub Pages dashboard + JSON snapshot (--out)
 | `GET` | `/api/packages/{name}` | Package detail incl. patches, findings and spec variants (`branch`, `spec`) |
 | `GET` | `/api/findings` | Paged findings (`status`, `severity`, `search`, `package`, `branch`) |
 | `GET` | `/api/cves/{cve_id}` | All findings for a CVE + live enrichment (`?enrich=false` to skip) |
-| `GET` | `/api/assignments` | Patch-automation queue |
-| `POST` | `/api/assignments` | Queue a finding (`cve_id`, `package_name`, `spec_path?`, `notes`) |
-| `PATCH` | `/api/assignments/{id}` | Update queue status (`?status=`) |
-| `POST` | `/api/scan` | Start a scan in the background (`202`, `409` if busy) |
+| `GET` | `/api/role` | Access tier for the caller (`viewer` / `editor`), from the presented editor key |
+| `GET` | `/api/assignments` | Patch-automation queue with its triage comments |
+| `POST` | `/api/assignments` | Editor only — queue a finding (`cve_id`, `package_name`, `spec_path?`, `notes`) |
+| `PATCH` | `/api/assignments/{id}` | Editor only — update queue status (`?status=`) |
+| `POST` | `/api/assignments/{id}/comments` | Editor only — add a triage comment (`body`) |
+| `POST` | `/api/scan` | Editor only — start a scan in the background (`202`, `409` if busy, `401` for viewers) |
 | `GET` | `/api/scan/status` | Live scan progress log + last scan |
 | `GET` | `/api/scans` | Scan history |
 | `GET` | `/api/methodology` | Machine-readable methodology (powers the Methodology page) |
@@ -367,16 +370,16 @@ Interactive docs are at `http://localhost:8000/docs` when `vulnex serve` is runn
 | --- | --- |
 | ![CVE detail](docs/screenshots/cve-detail.jpg) | ![Packages](docs/screenshots/packages.jpg) |
 
-| Methodology |
-| --- |
-| ![Methodology](docs/screenshots/methodology.jpg) |
+| Methodology | Project (portfolio view) |
+| --- | --- |
+| ![Methodology](docs/screenshots/methodology.jpg) | ![Project](docs/screenshots/project.jpg) |
 
 Views: **Dashboard** (KPIs, severity donut, verification outcome, last scan),
 **Affected** / **Already Patched** / **All CVEs** (searchable, filterable, paged tables),
 **Packages** (every spec, with source-tarball availability), **Package detail** (sources,
 patches, affected/patched CVEs, spec variants), **CVE detail** (verification evidence,
 references, "Assign to Patch Automation"), **Patch Queue**, **Scan** (Scan Now + history),
-**Methodology**.
+**Project** (the build, its engineering log and the author card), **Methodology**.
 
 Regenerate the screenshots with:
 
@@ -384,6 +387,55 @@ Regenerate the screenshots with:
 pip install playwright && python -m playwright install chromium
 make screenshots        # writes docs/screenshots/*.jpg
 ```
+
+---
+
+## Sharing the dashboard and the two access tiers
+
+One dashboard, two audiences. Visitors get a read-only showcase; the maintainer
+gets an editor workspace.
+
+| | **Viewer** — the link you share | **Editor** — you |
+| --- | --- | --- |
+| How it runs | the static export (`site/`, GitHub Pages) or any live server with `VULNEX_EDITOR_KEY` set | `vulnex serve` with the editor key |
+| Can read | every finding, patch, verification note, confidence score, queue and triage trail | same |
+| Can write | nothing — the hosted copy is a static snapshot with no backend | assign CVEs to patch automation, move queue status, leave triage comments, start scans |
+| Enforcement | `staticApi()` refuses every non-GET; no server exists to write to | every write endpoint answers `401` without `X-VULNEX-Key` |
+
+**How to share it with recruiters, interviewers or a team.**
+
+1. **Static showcase (recommended).** `make export` builds `site/`, and the scheduled
+   workflow publishes it to GitHub Pages — a free, permanent link anyone can open
+   without an account. This is the read-only tier by construction: `window.VULNEX_STATIC`
+   is baked with `role: "viewer"`, the header shows *Read-only view* and the assign /
+   comment / scan controls are not rendered at all.
+2. **Live server.** `make serve` gives the full interactive app on `:8000`. Every write
+   needs the editor key:
+
+   ```bash
+   VULNEX_EDITOR_KEY='pick-a-long-passphrase' \
+     python -m vulnex.cli serve --host 0.0.0.0 --port 8000
+   ```
+
+   Without the key the server stays in local *open editor* mode so development is never
+   blocked — set the key before exposing a live server to anyone else. In the UI, click
+   the red *Read-only view* chip, paste the key, and the header flips to *Editor mode*;
+   the key is kept in `localStorage` and sent as an `X-VULNEX-Key` header.
+3. **Share link button.** The `Share link` button in the header copies the current view
+   (including its hash route) so you can hand someone the exact CVE or package you are
+   talking about.
+
+Portfolio metadata for the **Project** page comes from the environment, so nothing is
+claimed on the author's behalf:
+
+| Variable | Default | Used for |
+| --- | --- | --- |
+| `VULNEX_AUTHOR_NAME` | `Akhila Guruju` | the "Built by" card |
+| `VULNEX_AUTHOR_GITHUB` | `https://github.com/<repo owner>` | GitHub link |
+| `VULNEX_AUTHOR_URL` | *(empty)* | personal site / profile link, hidden when unset |
+| `VULNEX_AUTHOR_TAGLINE` | *(empty)* | one-line role line, hidden when unset |
+| `VULNEX_PROJECT_REPO` | `akhila-dev5/vulnex` | "Source code" link and the `git clone` line |
+| `VULNEX_DEMO_URL` | *(empty)* | "Live demo" link, hidden when unset |
 
 ---
 
@@ -429,7 +481,7 @@ items, and **PRs are only ever opened against the configured target repository**
 ## Tests
 
 ```bash
-cd backend && python -m pytest -q     # 33 passed
+cd backend && python -m pytest -q     # 41 passed
 ```
 
 | File | Covers |
@@ -439,6 +491,7 @@ cd backend && python -m pytest -q     # 33 passed
 | `tests/test_verification.py` | status precedence, backport overriding OSV, corroboration, Azure Linux `last_affected` semantics |
 | `tests/test_api.py` | API surface, snapshot identity across duplicate package names, assignment flow, static frontend serving |
 | `tests/test_export.py` | static Pages export: static flag injection, rehydrated references, finding counts, scan history |
+| `tests/test_access.py` | access tiers: viewers get 401 on every write, editors can assign/comment, open mode without a key |
 
 The suite runs against fixtures and never touches the network.
 

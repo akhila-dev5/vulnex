@@ -38,6 +38,7 @@
           <a href="#/packages" data-route="packages"><span class="dot"></span>Packages</a>
           <a href="#/assignments" data-route="assignments"><span class="dot"></span>Patch Queue</a>
           <a href="#/scan" data-route="scan"><span class="dot"></span>Scan</a>
+          <a href="#/project" data-route="project"><span class="dot"></span>Project</a>
           <a href="#/about" data-route="about"><span class="dot"></span>Methodology</a>
         </nav>
 
@@ -56,6 +57,8 @@
             <p id="page-sub" class="muted">Azure Linux vulnerability posture</p>
           </div>
           <div class="topbar-actions">
+            <button class="btn btn-ghost btn-sm" id="share-btn" title="Copy a shareable link to this view">Share&nbsp;link</button>
+            <button class="role-chip" id="role-chip" type="button" hidden></button>
             <div class="last-scan" id="last-scan">No scan yet</div>
             <button class="btn btn-primary" id="scan-now">Scan&nbsp;Now</button>
           </div>
@@ -68,6 +71,22 @@
 
     <div class="drawer-backdrop" id="backdrop" hidden></div>
     <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+    <div class="modal-backdrop" id="unlock-modal" hidden>
+      <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="unlock-title">
+        <h2 id="unlock-title">Editor access</h2>
+        <p class="muted small" style="margin:0">
+          VULNEX has two tiers. Visitors get the read-only showcase: every finding,
+          patch and verification note, with no way to queue work or comment. Editors can
+          assign CVEs to patch automation and leave triage comments.
+        </p>
+        <input class="input" id="unlock-key" type="password" placeholder="editor key" autocomplete="off" />
+        <div class="toolbar" style="margin:12px 0 0;justify-content:flex-end;gap:8px">
+          <button class="btn btn-ghost" id="unlock-cancel" type="button">Cancel</button>
+          <button class="btn btn-primary" id="unlock-submit" type="button">Unlock editor mode</button>
+        </div>
+      </div>
+    </div>
 
     <script src="app.js"></script>
   </body>

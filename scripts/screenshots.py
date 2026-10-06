@@ -75,6 +75,7 @@ def main() -> int:
         ("patched", "#/patched", 1500),
         ("packages", "#/packages", 1500),
         ("cve-detail", f"#/cve/{_pick_cve()}", 2600),
+        ("project", "#/project", 2000),
         ("methodology", "#/about", 1200),
     ]
 

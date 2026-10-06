@@ -8,10 +8,11 @@ works without any external queue or paid infrastructure.
 from __future__ import annotations
 
 import threading
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -21,10 +22,22 @@ from . import __version__, config, db
 from .enrichment import enrich_cve
 from .scanner import ScanOptions, run_scan
 
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    """Make sure the snapshot DB carries the current schema before serving."""
+    conn = db.connect()
+    try:
+        db.init_db(conn)
+    finally:
+        conn.close()
+    yield
+
+
 app = FastAPI(
     title="VULNEX API",
     version=__version__,
     description="Azure Linux CVE scanner and security dashboard API.",
+    lifespan=lifespan,
 )
 
 app.add_middleware(
@@ -111,6 +124,36 @@ def _now() -> str:
 manager = ScanManager()
 
 
+# -- access tiers -----------------------------------------------------------
+# Two roles share one dashboard. ``viewer`` is the read-only showcase used for
+# public/recruiter links; ``editor`` can queue work and leave triage comments.
+# Writes require the ``X-VULNEX-Key`` header once ``VULNEX_EDITOR_KEY`` is set; a
+# server without that key is in local "open editor" mode.
+ROLE_VIEWER = "viewer"
+ROLE_EDITOR = "editor"
+
+
+def _presented_key(request: Request) -> str | None:
+    return request.headers.get("x-vulnex-key") or None
+
+
+def resolve_role(request: Request) -> str:
+    if not config.editor_key_required():
+        return ROLE_EDITOR
+    key = _presented_key(request)
+    return ROLE_EDITOR if key and key == config.EDITOR_KEY else ROLE_VIEWER
+
+
+def require_editor(request: Request) -> None:
+    """Raise 401 for viewers so a write can never slip through the UI gate."""
+    if resolve_role(request) != ROLE_EDITOR:
+        raise HTTPException(
+            status_code=401,
+            detail="Read-only view: this action needs editor access. "
+                   "Send an X-VULNEX-Key header with the editor key.",
+        )
+
+
 # -- request models ---------------------------------------------------------
 class ScanRequest(BaseModel):
     branches: list[str] | None = None
@@ -128,23 +171,33 @@ class AssignmentRequest(BaseModel):
     target_repo: str | None = None
 
 
+class CommentRequest(BaseModel):
+    body: str
+    author: str = "editor"
+
+
 # -- read endpoints ---------------------------------------------------------
 @app.get("/api/health")
 def health() -> dict:
     return {"status": "ok", "version": __version__, "time": _now()}
 
 
+@app.get("/api/role")
+def get_role(request: Request) -> dict:
+    """Which tier the caller is in, so the UI can hide editor-only actions."""
+    role = resolve_role(request)
+    return {
+        "role": role,
+        "write_enabled": role == ROLE_EDITOR,
+        "key_required": config.editor_key_required(),
+    }
+
+
 @app.get("/api/stats")
 def get_stats() -> dict:
     with db.session() as conn:
         data = db.stats(conn)
-    data["repository"] = {
-        "owner": config.REPO_OWNER,
-        "repo": config.REPO_NAME,
-        "branches": list(config.DEFAULT_BRANCHES),
-        "ecosystem": config.OSV_ECOSYSTEM,
-        "patch_target_repo": config.PATCH_TARGET_REPO,
-    }
+    data["repository"] = config.repository_metadata()
     return data
 
 
@@ -234,7 +287,8 @@ def get_assignments() -> dict:
 
 
 @app.post("/api/assignments")
-def create_assignment(payload: AssignmentRequest) -> dict:
+def create_assignment(payload: AssignmentRequest, request: Request) -> dict:
+    require_editor(request)
     target = payload.target_repo or config.PATCH_TARGET_REPO
     with db.session() as conn:
         finding = db.get_finding(
@@ -254,7 +308,8 @@ def create_assignment(payload: AssignmentRequest) -> dict:
 
 
 @app.patch("/api/assignments/{assignment_id}")
-def patch_assignment(assignment_id: int, status: str = Query(...)) -> dict:
+def patch_assignment(assignment_id: int, request: Request, status: str = Query(...)) -> dict:
+    require_editor(request)
     with db.session() as conn:
         record = db.update_assignment(conn, assignment_id, status)
     if not record:
@@ -262,9 +317,28 @@ def patch_assignment(assignment_id: int, status: str = Query(...)) -> dict:
     return {"assignment": record}
 
 
+@app.post("/api/assignments/{assignment_id}/comments")
+def add_assignment_comment(
+    assignment_id: int, payload: CommentRequest, request: Request
+) -> dict:
+    """Editor-only triage comment on a queued finding."""
+    require_editor(request)
+    body = (payload.body or "").strip()
+    if not body:
+        raise HTTPException(status_code=400, detail="Comment body is required")
+    with db.session() as conn:
+        if not db.get_assignment(conn, assignment_id):
+            raise HTTPException(status_code=404, detail="Assignment not found")
+        comment = db.add_comment(
+            conn, assignment_id, body, author=(payload.author or "editor").strip() or "editor"
+        )
+    return {"comment": comment}
+
+
 # -- scan control -----------------------------------------------------------
 @app.post("/api/scan")
-def start_scan(payload: ScanRequest | None = None) -> JSONResponse:
+def start_scan(request: Request, payload: ScanRequest | None = None) -> JSONResponse:
+    require_editor(request)
     payload = payload or ScanRequest()
     options = ScanOptions(
         branches=payload.branches or list(config.DEFAULT_BRANCHES),

@@ -6,12 +6,17 @@
 const API = "/api";
 // Set by the GitHub Pages build (vulnex export); null for the live API.
 const STATIC = window.VULNEX_STATIC || null;
+// The exported showcase has no backend, so it is always the read-only tier.
+const STATIC_ROLE = (STATIC && STATIC.role) || null;
+const EDITOR_KEY_STORAGE = "vulnex.editorKey";
 
 const state = {
   stats: null,
   methodology: null,
   page: {},          // per-route pagination
   scanTimer: null,
+  role: STATIC ? "viewer" : null,   // "viewer" | "editor"
+  roleInfo: null,
 };
 
 /* ------------------------------- utilities ------------------------------- */
@@ -96,13 +101,77 @@ function blobUrl(specPath, branch) {
   return `https://github.com/${repo.owner}/${repo.repo}/blob/${branch || ""}/${specPath}`;
 }
 
+/* ------------------------------ access tiers -----------------------------
+   Viewers get the read-only showcase; editors can queue work and comment.
+   The editor key never leaves the browser except as an X-VULNEX-Key header.
+   ------------------------------------------------------------------------ */
+function storedEditorKey() {
+  try { return localStorage.getItem(EDITOR_KEY_STORAGE) || ""; } catch (_) { return ""; }
+}
+
+function setStoredEditorKey(key) {
+  try {
+    if (key) localStorage.setItem(EDITOR_KEY_STORAGE, key);
+    else localStorage.removeItem(EDITOR_KEY_STORAGE);
+  } catch (_) { /* storage unavailable: unlock still works for this session */ }
+}
+
+function isEditor() { return state.role === "editor"; }
+
+function requireEditor() {
+  if (isEditor()) return true;
+  toast("Read-only view — assigning and triage comments need editor access.", true);
+  return false;
+}
+
+async function resolveRole() {
+  if (STATIC) {
+    state.role = STATIC_ROLE === "editor" ? "editor" : "viewer";
+    state.roleInfo = { role: state.role, write_enabled: state.role === "editor", key_required: true };
+  } else {
+    try {
+      state.roleInfo = await api("/role");
+      state.role = state.roleInfo.role === "editor" ? "editor" : "viewer";
+    } catch (_) {
+      state.role = "viewer";
+      state.roleInfo = { role: "viewer", write_enabled: false, key_required: true };
+    }
+  }
+  renderRoleChip();
+}
+
+function renderRoleChip() {
+  const chip = $("#role-chip");
+  if (!chip) return;
+  const editor = isEditor();
+  chip.hidden = false;
+  chip.className = "role-chip " + (editor ? "editor" : "viewer");
+  chip.textContent = editor ? "Editor mode" : "Read-only view";
+  chip.title = editor
+    ? "You can assign CVEs and leave triage comments. Click to lock."
+    : "Visitors browse everything and change nothing. Click to enter an editor key.";
+  const scanBtn = $("#scan-now");
+  if (scanBtn) {
+    scanBtn.disabled = !editor;
+    scanBtn.title = editor ? "" : "Read-only view — running a scan needs editor access";
+  }
+}
+
 async function api(path, opts = {}) {
   if (STATIC) return staticApi(path, opts);
+  const headers = { "Content-Type": "application/json", ...(opts.headers || {}) };
+  const key = storedEditorKey();
+  if (key) headers["X-VULNEX-Key"] = key;
   const res = await fetch(API + path, {
-    headers: { "Content-Type": "application/json" },
     ...opts,
-    body: opts.body ? JSON.stringify(opts.body) : undefined,
+    headers,
+    body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
   });
+  if (res.status === 401) {
+    state.role = "viewer";
+    renderRoleChip();
+    throw new Error("Read-only view — that action needs editor access.");
+  }
   if (!res.ok) {
     let detail = res.statusText;
     try { detail = (await res.json()).detail || detail; } catch (_) {}
@@ -264,6 +333,7 @@ const TITLES = {
   cve: ["CVE detail", "Verification, provenance and patch automation"],
   assignments: ["Patch Automation Queue", "CVEs assigned for AI patch remediation"],
   scan: ["Scan Control", "Run a live scan against the Azure Linux repository"],
+  project: ["Project", "The build, the engineering log and how to reach me"],
   about: ["Methodology", "How VULNEX detects and verifies vulnerabilities"],
 };
 
@@ -292,6 +362,7 @@ async function render() {
     else if (name === "package") await renderPackageDetail(view, route.parts[1], route.query.branch, route.query.spec);
     else if (name === "assignments") await renderAssignments(view);
     else if (name === "scan") await renderScan(view);
+    else if (name === "project") await renderProject(view);
     else if (name === "about") await renderAbout(view);
     else { location.hash = "#/"; }
   } catch (err) {
@@ -534,6 +605,7 @@ async function renderCveDetail(view, cveId) {
   const desc = enrichment.description || primary.description || "No description available.";
   const refs = enrichment.references || primary.references || [];
   const assigned = data.assignment;
+  const canWrite = isEditor();
 
   const affectedPkgs = findings.filter((f) => f.status === "affected");
   const patchedPkgs = findings.filter((f) => f.status === "patched");
@@ -575,14 +647,17 @@ async function renderCveDetail(view, cveId) {
         <div class="card">
           <div class="card-head"><h2>Assign to patch automation</h2></div>
           <p class="muted small" style="margin-top:-4px">Queue this CVE for the AI backport workflow. VULNEX prepares the work item; the remediation agents open the pull request against <span class="mono">${esc(state.stats?.repository?.patch_target_repo || "azurelinux-test")}</span> only.</p>
+          ${canWrite ? `
           <div class="toolbar" style="margin:12px 0 0">
-            <input class="input" id="assign-pkg" placeholder="package" value="${esc(primary.package_name || "")}" ${primary.package_name ? "" : ""}/>
+            <input class="input" id="assign-pkg" placeholder="package" value="${esc(primary.package_name || "")}"/>
             <input class="input" id="assign-notes" placeholder="triage notes (optional)"/>
           </div>
           <button class="btn btn-primary" id="assign-btn" style="margin-top:12px;width:100%;justify-content:center" ${assigned ? "disabled" : ""}>
             ${assigned ? "✓ Assigned to Patch Automation" : "Assign to Patch Automation"}
-          </button>
+          </button>` : `
+          <p class="viewer-note" style="margin-top:12px"><b>Read-only view.</b> You can inspect this finding, its range-match evidence, patch provenance and confidence. Assigning work and leaving triage comments is limited to editors — click <b>Read-only view</b> in the header if you have the key.</p>`}
           ${assigned ? `<p class="muted small" style="margin-bottom:0">Status: <b>${esc(assigned.status)}</b> · queued ${esc(fmtTime(assigned.created_at))}</p>` : ""}
+          ${commentsBlock(assigned)}
         </div>
 
         <div class="card" style="margin-top:16px">
@@ -618,6 +693,7 @@ async function renderCveDetail(view, cveId) {
   `;
 
   $("#assign-btn")?.addEventListener("click", async (e) => {
+    if (!requireEditor()) return;
     e.target.disabled = true;
     try {
       await api("/assignments", {
@@ -801,8 +877,38 @@ function cveMiniCard(f) {
 }
 
 /* ------------------------------ assignments ------------------------------ */
+function commentsBlock(a) {
+  const comments = (a && a.comments) || [];
+  if (!comments.length) return "";
+  return `<div class="comment-list">${comments.map((c) => `
+    <div class="comment"><span class="who">${esc(c.author || "editor")}</span>
+    <span>${esc(c.body)}</span><span class="when">${esc(relTime(c.created_at))}</span></div>`).join("")}</div>`;
+}
+
+function bindCommentForms() {
+  document.querySelectorAll("[data-comment-btn]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      if (!requireEditor()) return;
+      const id = btn.dataset.commentBtn;
+      const input = document.querySelector(`[data-comment-input="${id}"]`);
+      const body = (input ? input.value : "").trim();
+      if (!body) { toast("Write the comment first", true); return; }
+      btn.disabled = true;
+      try {
+        await api(`/assignments/${id}/comments`, { method: "POST", body: { body } });
+        toast("Triage comment added");
+        render();
+      } catch (err) {
+        btn.disabled = false;
+        toast(err.message, true);
+      }
+    });
+  });
+}
+
 async function renderAssignments(view) {
   const data = await api("/assignments");
+  const canWrite = isEditor();
   view.innerHTML = `
     <div class="card">
       <div class="card-head"><h2>Patch automation queue</h2>
@@ -815,9 +921,13 @@ async function renderAssignments(view) {
           <td><span class="pkg-name">${esc(a.package_name)}</span></td>
           <td><span class="mono small">${esc(a.target_repo)}</span></td>
           <td><span class="badge st-unconfirmed">${esc(a.status)}</span></td>
-          <td class="desc">${esc(a.notes || "—")}</td>
+          <td class="desc">${esc(a.notes || "—")}${commentsBlock(a)}
+            ${canWrite ? `<div class="comment-form">
+              <input class="input" data-comment-input="${a.id}" placeholder="triage comment…"/>
+              <button class="btn btn-sm" data-comment-btn="${a.id}">Comment</button>
+            </div>` : ""}</td>
           <td class="muted small">${esc(relTime(a.created_at))}</td></tr>`).join("")}
-        </tbody></table></div>` : `<div class="empty">Nothing queued yet. Open a CVE and choose <b>Assign to Patch Automation</b>.</div>`}
+        </tbody></table></div>` : `<div class="empty">Nothing queued yet.${canWrite ? " Open a CVE and choose <b>Assign to Patch Automation</b>." : ""}</div>`}
     </div>
     <div class="card" style="margin-top:16px">
       <div class="card-head"><h2>Downstream workflow (interface ready)</h2></div>
@@ -831,13 +941,16 @@ async function renderAssignments(view) {
       </div>
       <p class="muted small">Assignments are persisted and exposed over the API so the future remediation agents can pick them up. PRs are only ever opened against the configured Azure Linux test repository.</p>
     </div>
+    ${canWrite ? "" : `<div class="card" style="margin-top:16px"><p class="viewer-note"><b>Read-only view.</b> The queue, its statuses and every triage comment are visible to all visitors. Adding comments or changing status needs editor access.</p></div>`}
   `;
+  if (canWrite) bindCommentForms();
 }
 
 /* --------------------------------- scan ---------------------------------- */
 async function renderScan(view) {
   const status = await api("/scan/status");
   const history = await api("/scans");
+  const canWrite = isEditor();
   view.innerHTML = `
     <div class="grid cols-2">
       <div class="card">
@@ -846,13 +959,15 @@ async function renderScan(view) {
           <span id="scan-state">${status.manager.running ? `<span class="live-dot"></span> running` : "idle"}</span>
         </div>
         <p class="muted small" style="margin-top:-4px">Fetches the latest SPECS from the Azure Linux repository, extracts package versions and patches, queries OSV Azure Linux advisories, verifies distro backports, corroborates across distros and refreshes the dashboard.</p>
+        ${canWrite ? `
         <div class="toolbar" style="margin-top:12px">
           <label class="muted small">Limit packages</label>
           <input class="input" id="scan-limit" type="number" min="0" value="0" style="min-width:110px"/>
           <label class="muted small"><input type="checkbox" id="scan-blobs" checked/> verify tarballs</label>
           <label class="muted small"><input type="checkbox" id="scan-enrich" checked/> enrich CVEs</label>
         </div>
-        <button class="btn btn-primary" id="scan-start" ${status.manager.running ? "disabled" : ""} style="margin-top:6px">Run scan now</button>
+        <button class="btn btn-primary" id="scan-start" ${status.manager.running ? "disabled" : ""} style="margin-top:6px">Run scan now</button>` : `
+        <p class="viewer-note" style="margin-top:12px"><b>Read-only view.</b> Scan history and the latest run are visible to everyone; starting a scan needs editor access.</p>`}
         <div id="scan-log" class="list" style="margin-top:14px">
           ${(status.manager.log || []).slice(-8).map((l) => `<div class="list-item"><div class="grow"><p class="mono small">${esc(l.message)}</p></div><span class="muted small">${esc(fmtTime(l.at))}</span></div>`).join("")}
         </div>
@@ -880,6 +995,7 @@ async function renderScan(view) {
   `;
 
   $("#scan-start")?.addEventListener("click", async (e) => {
+    if (!requireEditor()) return;
     e.target.disabled = true;
     try {
       await api("/scan", {
@@ -989,6 +1105,153 @@ async function renderAbout(view) {
   `;
 }
 
+/* -------------------------------- project -------------------------------- */
+const PROJECT_HIGHLIGHTS = [
+  {
+    title: "Real RPM version semantics",
+    body: "Every decision runs through a dependency-free port of lib/rpmvercmp.c: numeric segments beat alpha ones, `1.0~rc1` sorts before `1.0`, `1.0^git1` after it and `fc4` equals `fc.4` — exactly like rpm.",
+  },
+  {
+    title: "Distro backports beat upstream ranges",
+    body: "A package can sit below a CVE's upstream fix and still be fully patched, because Azure Linux backports fixes as Patch: entries. VULNEX reads those patches and the CVE-*.nopatch \"not affected\" markers straight out of the .spec and lets them override the range match.",
+  },
+  {
+    title: "Identity is (branch, spec_path)",
+    body: "Five specs ship under one golang name and two under rust. Keying by package name silently merges them, so VULNEX keeps every spec, marks the canonical <name>.spec as primary and exposes versioned siblings as variants.",
+  },
+  {
+    title: "Every verdict carries its evidence",
+    body: "Findings store the advisory id, the matched event boundary, the patch file, whether that file actually exists in the tree, cross-distro corroboration and a confidence score — the dashboard explains why something is affected or already patched.",
+  },
+];
+
+const ENGINEERING_LOG = [
+  {
+    title: "A commented-out patch leaked a CVE",
+    body: "`# Patch2: CVE-1999-0001.patch` was parsed as an applied backport, which flipped a real exposure into \"already patched\". The parser now skips commented lines that look like patches, sources or fields.",
+  },
+  {
+    title: "\"Affected but unfixed\" was reported as unconfirmed",
+    body: "Azure Linux advisories often bound a range with last_affected equal to the shipped version. Those are affected-and-unfixed, not uncertain, so they now land in `affected` with reason `unfixed` and a confidence penalty.",
+  },
+  {
+    title: "Duplicate package names broke the snapshot",
+    body: "Two UNIQUE constraints fired on real data: packages(branch, name) and findings(cve_id, spec_path). Both keys were wrong — the schema moved to (branch, spec_path) and findings(cve_id, branch, spec_path).",
+  },
+];
+
+async function renderProject(view) {
+  state.stats = state.stats || await api("/stats");
+  const repo = state.stats?.repository || {};
+  const author = repo.author || {};
+  const s = state.stats || {};
+  const last = s.last_scan || {};
+
+  const links = [];
+  if (repo.project_url) links.push(`<a class="chip link" href="${esc(repo.project_url)}" target="_blank" rel="noopener">Source code ↗</a>`);
+  if (repo.demo_url) links.push(`<a class="chip link" href="${esc(repo.demo_url)}" target="_blank" rel="noopener">Live demo ↗</a>`);
+  if (author.github) links.push(`<a class="chip link" href="${esc(author.github)}" target="_blank" rel="noopener">GitHub ↗</a>`);
+  if (author.url) links.push(`<a class="chip link" href="${esc(author.url)}" target="_blank" rel="noopener">Profile ↗</a>`);
+
+  view.innerHTML = `
+    <div class="project-hero">
+      <div class="card">
+        <div class="card-head"><h2>VULNEX</h2><span class="chip">Python · FastAPI · SQLite · vanilla JS</span></div>
+        <h2 style="font-size:22px;letter-spacing:-0.02em;margin:0 0 10px">An Azure Linux CVE scanner that verifies before it alarms</h2>
+        <p class="lede">VULNEX reads the real RPM spec tree of Azure Linux, matches every package against Microsoft's own advisory feed on OSV using true RPM version semantics, then checks each hit against the distro's backport patches — so the dashboard shows what is actually exploitable instead of a keyword soup.</p>
+        <div class="workflow" style="margin:14px 0 4px">
+          <span class="step active">Azure Linux SPECS</span><span class="arrow">→</span>
+          <span class="step">OSV advisories</span><span class="arrow">→</span>
+          <span class="step">RPM range match</span><span class="arrow">→</span>
+          <span class="step">Patch verification</span><span class="arrow">→</span>
+          <span class="step">Corroboration</span><span class="arrow">→</span>
+          <span class="step active">VULNEX dashboard</span>
+        </div>
+        <div class="grid kpis" style="margin-top:16px">
+          <div class="kpi info"><div class="k-label">Packages scanned</div>
+            <div class="k-value">${fmtNum(s.total_packages)}</div><div class="k-sub">every RPM spec, both branches</div></div>
+          <div class="kpi critical"><div class="k-label">Verified findings</div>
+            <div class="k-value">${fmtNum(s.total_findings)}</div><div class="k-sub">${fmtNum(s.distinct_cves)} distinct CVEs</div></div>
+          <div class="kpi patched"><div class="k-label">Already patched</div>
+            <div class="k-value">${fmtNum(s.patched)}</div><div class="k-sub">distro backports detected</div></div>
+          <div class="kpi high"><div class="k-label">Last scan</div>
+            <div class="k-value" style="font-size:20px">${esc(last.finished_at ? relTime(last.finished_at) : "—")}</div>
+            <div class="k-sub">${last.duration_seconds != null ? esc(last.duration_seconds) + "s runtime" : "no run recorded"}</div></div>
+        </div>
+      </div>
+
+      <div>
+        <div class="card author-card">
+          <div class="card-head"><h2>Built by</h2></div>
+          <p class="name" style="margin:0">${esc(author.name || "—")}</p>
+          ${author.tagline ? `<p class="muted small" style="margin:4px 0 0">${esc(author.tagline)}</p>` : ""}
+          <p class="muted small" style="margin:8px 0 0">Solo build: collector, matcher, verifier, API, dashboard, scheduled CI and deployment.</p>
+          <div class="links">${links.join(" ") || '<span class="muted small">—</span>'}</div>
+        </div>
+
+        <div class="card" style="margin-top:16px">
+          <div class="card-head"><h2>Who can do what</h2></div>
+          <div class="list">
+            <div class="list-item"><div class="grow">
+              <h4 style="font-family:var(--sans);font-size:13.5px;color:var(--text)">Viewer — the public link</h4>
+              <p>Sees every finding, patch, verification note and confidence score. Cannot assign work, comment or start scans.</p>
+            </div></div>
+            <div class="list-item"><div class="grow">
+              <h4 style="font-family:var(--sans);font-size:13.5px;color:var(--text)">Editor — maintainer key</h4>
+              <p>Unlocks on the live server with an editor key: queue a CVE for patch automation, move queue status and leave triage comments. Write endpoints answer 401 without the key.</p>
+            </div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="grid cols-2" style="margin-top:16px">
+      <div class="card">
+        <div class="card-head"><h2>What makes it non-trivial</h2></div>
+        <div class="list">
+          ${PROJECT_HIGHLIGHTS.map((h, i) => `
+            <div class="list-item highlight"><span class="n">${i + 1}</span><div class="grow">
+              <h4 style="font-family:var(--sans);font-size:13.5px;color:var(--text)">${esc(h.title)}</h4>
+              <p>${esc(h.body)}</p>
+            </div></div>`).join("")}
+        </div>
+      </div>
+
+      <div>
+        <div class="card">
+          <div class="card-head"><h2>Engineering log — bugs found on real data</h2></div>
+          <div class="list">
+            ${ENGINEERING_LOG.map((e) => `
+              <div class="list-item log-entry"><div class="grow">
+                <h4 style="font-family:var(--sans);font-size:13.5px;color:var(--text)">${esc(e.title)}</h4>
+                <p>${esc(e.body)}</p>
+              </div></div>`).join("")}
+          </div>
+        </div>
+
+        <div class="card" style="margin-top:16px">
+          <div class="card-head"><h2>Run it yourself</h2></div>
+          <pre class="code-block">git clone ${esc(repo.project_url || "https://github.com/akhila-dev5/vulnex")}
+cd vulnex
+make install   # venv + runtime deps
+make test      # 41 tests
+make serve     # http://localhost:8000
+make scan      # re-run the full two-branch scan</pre>
+          <div class="tag-list" style="margin-top:12px">
+            ${["Python 3.10", "FastAPI", "SQLite", "OSV.dev", "NVD", "MITRE CVE", "Red Hat", "vanilla JS (no build)", "GitHub Actions", "GitHub Pages"].map((t) => `<span class="chip">${esc(t)}</span>`).join("")}
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:16px">
+      <div class="card-head"><h2>Data sources &amp; methodology</h2>
+        <a class="chip link" href="#/about">Methodology page →</a></div>
+      <p class="muted small" style="margin:0">Detection uses the official Azure Linux advisory feed (OSV ecosystem <span class="mono">${esc(repo.ecosystem || "Azure Linux:3")}</span>), cross-distro corroboration from Red Hat, Debian, Ubuntu and Alpine, and enrichment from NVD, MITRE CVE and GitHub Security Advisories. Everything runs on free public data — no paid API anywhere in the stack.</p>
+    </div>
+  `;
+}
+
 /* ------------------------------- events ---------------------------------- */
 document.addEventListener("click", (e) => {
   const cveRow = e.target.closest("tr[data-cve]");
@@ -1002,6 +1265,7 @@ document.addEventListener("click", (e) => {
 });
 
 $("#scan-now")?.addEventListener("click", async () => {
+  if (!requireEditor()) return;
   try {
     await api("/scan", { method: "POST", body: {} });
     toast("Scan started");
@@ -1015,10 +1279,88 @@ $("#nav-toggle")?.addEventListener("click", () => {
   document.querySelector(".sidebar")?.classList.toggle("open");
 });
 
+/* --------------------------- access tier controls ------------------------ */
+function openUnlockModal() {
+  const modal = $("#unlock-modal");
+  if (!modal) return;
+  modal.hidden = false;
+  $("#unlock-key").value = "";
+  setTimeout(() => $("#unlock-key").focus(), 30);
+}
+
+function closeUnlockModal() {
+  const modal = $("#unlock-modal");
+  if (modal) modal.hidden = true;
+}
+
+$("#role-chip")?.addEventListener("click", async () => {
+  if (isEditor()) {
+    if (state.roleInfo && state.roleInfo.key_required === false) {
+      toast("This server has no editor key set, so it stays in editor mode.");
+      return;
+    }
+    setStoredEditorKey("");
+    state.role = "viewer";
+    state.roleInfo = { role: "viewer", write_enabled: false, key_required: true };
+    renderRoleChip();
+    toast("Locked — back to the read-only view");
+    render();
+    return;
+  }
+  if (STATIC) {
+    toast("This hosted build is read-only. Run `vulnex serve` locally for editor mode.");
+    return;
+  }
+  if (state.roleInfo && state.roleInfo.key_required === false) {
+    toast("No editor key is configured on this server — it is already open for editing.");
+    return;
+  }
+  openUnlockModal();
+});
+
+$("#unlock-cancel")?.addEventListener("click", closeUnlockModal);
+$("#unlock-modal")?.addEventListener("click", (e) => {
+  if (e.target.id === "unlock-modal") closeUnlockModal();
+});
+$("#unlock-key")?.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") $("#unlock-submit").click();
+});
+$("#unlock-submit")?.addEventListener("click", async () => {
+  const key = ($("#unlock-key").value || "").trim();
+  if (!key) { toast("Enter the editor key", true); return; }
+  setStoredEditorKey(key);
+  try {
+    const info = await api("/role");
+    if (info.role !== "editor") throw new Error("That key was not accepted.");
+    state.role = "editor";
+    state.roleInfo = info;
+    closeUnlockModal();
+    renderRoleChip();
+    toast("Editor mode unlocked");
+    render();
+  } catch (err) {
+    setStoredEditorKey("");
+    toast(err.message, true);
+  }
+});
+
+$("#share-btn")?.addEventListener("click", async () => {
+  const url = location.href;
+  try {
+    await navigator.clipboard.writeText(url);
+    toast("Link copied — paste it anywhere");
+  } catch (_) {
+    window.prompt("Copy this link:", url);
+  }
+});
+
 window.addEventListener("hashchange", render);
-window.addEventListener("DOMContentLoaded", () => {
+window.addEventListener("DOMContentLoaded", async () => {
   // Warm the static snapshot so the first navigation is instant on Pages.
   if (STATIC) staticBundle().catch(() => {});
+  // Resolve the access tier before the first paint so editor-only controls
+  // never flash for a viewer.
+  await resolveRole();
   render();
   // keep the KPI chrome fresh
   setInterval(async () => {
