@@ -53,7 +53,7 @@ body {
   background-attachment: fixed;
 }
 
-/* faint grid + scanline for the "ops console" feel */
+/* faint grid for the "ops console" feel */
 body::before {
   content: "";
   position: fixed;
@@ -64,25 +64,6 @@ body::before {
   background-size: 46px 46px;
   pointer-events: none;
   z-index: 0;
-}
-
-.scanline {
-  position: fixed;
-  left: 0;
-  right: 0;
-  top: 0;
-  height: 2px;
-  background: linear-gradient(90deg, transparent, var(--accent), transparent);
-  opacity: 0.5;
-  animation: sweep 7s linear infinite;
-  pointer-events: none;
-  z-index: 5;
-}
-@keyframes sweep {
-  0% { transform: translateY(0); opacity: 0; }
-  10% { opacity: 0.55; }
-  90% { opacity: 0.55; }
-  100% { transform: translateY(100vh); opacity: 0; }
 }
 
 a { color: inherit; text-decoration: none; }
