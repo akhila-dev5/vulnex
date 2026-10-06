@@ -1,0 +1,32 @@
+[project]
+name = "vulnex"
+version = "1.0.0"
+description = "VULNEX — Azure Linux CVE scanner and security dashboard"
+readme = "../README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.29",
+    "requests>=2.31",
+    "pydantic>=2.6",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "httpx>=0.27"]
+# Only needed to regenerate docs/screenshots via scripts/screenshots.py.
+screenshots = ["playwright>=1.40"]
+
+[project.scripts]
+vulnex = "vulnex.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["vulnex*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
