@@ -278,7 +278,7 @@ git clone https://github.com/akhila-dev5/vulnex.git
 cd vulnex
 
 make install            # creates backend/.venv and installs runtime + dev deps
-make test               # 32 tests
+make test               # 33 tests
 make serve              # http://localhost:8000  (live dashboard + Scan Now)
 ```
 
@@ -429,7 +429,7 @@ items, and **PRs are only ever opened against the configured target repository**
 ## Tests
 
 ```bash
-cd backend && python -m pytest -q     # 32 passed
+cd backend && python -m pytest -q     # 33 passed
 ```
 
 | File | Covers |
@@ -438,6 +438,7 @@ cd backend && python -m pytest -q     # 32 passed
 | `tests/test_spec_parser.py` | macro expansion, CVE extraction, commented-out patches, `.nopatch`, patch-file presence |
 | `tests/test_verification.py` | status precedence, backport overriding OSV, corroboration, Azure Linux `last_affected` semantics |
 | `tests/test_api.py` | API surface, snapshot identity across duplicate package names, assignment flow, static frontend serving |
+| `tests/test_export.py` | static Pages export: static flag injection, rehydrated references, finding counts, scan history |
 
 The suite runs against fixtures and never touches the network.
 
@@ -461,7 +462,7 @@ vulnex/
 │   │   ├── export.py         static GitHub Pages export
 │   │   ├── api.py            FastAPI app + Scan Now manager
 │   │   └── cli.py            `vulnex` command line
-│   ├── tests/                32 pytest tests
+│   ├── tests/                33 pytest tests
 │   ├── requirements.txt      runtime deps (fastapi, uvicorn, requests, pydantic)
 │   └── requirements-dev.txt  + pytest, httpx
 ├── frontend/                 build-free SPA (index.html, styles.css, app.js)
