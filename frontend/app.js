@@ -428,6 +428,9 @@ const TITLES = {
 };
 
 async function render() {
+  // A GitHub sign-in may hand the SPA its token on a same-document navigation
+  // too, so absorb it here as well as on first load.
+  if (absorbHandoffToken()) await resolveRole();
   const route = parseHash();
   const name = route.key;
   const [title, sub] = TITLES[name] || TITLES.dashboard;
@@ -1556,14 +1559,18 @@ $("#share-btn")?.addEventListener("click", async () => {
 });
 
 window.addEventListener("hashchange", render);
-window.addEventListener("DOMContentLoaded", async () => {
-  // A GitHub sign-in comes back as ``#vulnex_token=…``; keep it and clean the URL
-  // so the token never sticks around in the address bar or history.
+// A GitHub sign-in comes back as ``#vulnex_token=…``. Keep the token and clean
+// the URL so it never sticks around in the address bar or session history.
+function absorbHandoffToken() {
   const handed = location.hash.match(/vulnex_token=([A-Za-z0-9_\-]+)/);
-  if (handed) {
-    setStoredKey(handed[1]);
-    history.replaceState(null, "", location.pathname + location.search + "#/triage");
-  }
+  if (!handed) return false;
+  setStoredKey(handed[1]);
+  history.replaceState(null, "", location.pathname + location.search + "#/triage");
+  return true;
+}
+
+window.addEventListener("DOMContentLoaded", async () => {
+  absorbHandoffToken();
   // Warm the static snapshot so the first navigation is instant on Pages.
   if (STATIC) staticBundle().catch(() => {});
   // Resolve the access tier before the first paint so permission-gated controls
