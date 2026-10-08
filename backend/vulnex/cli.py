@@ -73,6 +73,20 @@ def _cmd_export(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_hash_password(args: argparse.Namespace) -> int:
+    """Print a PBKDF2 hash to put in VULNEX_ADMIN_PASSWORD_HASH."""
+    import getpass
+
+    from . import auth
+
+    password = args.password or getpass.getpass("Admin password: ")
+    if args.password and not args.password.strip():
+        print("[vulnex] refusing an empty password", file=sys.stderr)
+        return 2
+    print(auth.hash_password(password))
+    return 0
+
+
 def _cmd_serve(args: argparse.Namespace) -> int:
     import uvicorn
 
@@ -125,6 +139,17 @@ def build_parser() -> argparse.ArgumentParser:
     serve.add_argument("--port", type=int, default=8000)
     serve.add_argument("--db", default=None)
     serve.set_defaults(func=_cmd_serve)
+
+    hashpw = sub.add_parser(
+        "hash-password",
+        help="Hash the admin password for VULNEX_ADMIN_PASSWORD_HASH",
+    )
+    hashpw.add_argument(
+        "--password",
+        default="",
+        help="Password to hash (omit to be prompted, so it stays out of shell history)",
+    )
+    hashpw.set_defaults(func=_cmd_hash_password)
 
     return parser
 

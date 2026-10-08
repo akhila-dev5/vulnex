@@ -6,7 +6,7 @@
     <title>VULNEX — Azure Linux CVE Intelligence</title>
     <meta
       name="description"
-      content="VULNEX is an open-source Azure Linux CVE scanner: it reads real RPM specs, matches vulnerabilities with version-range logic and verifies distro backports."
+      content="VULNEX is an Azure Linux CVE scanner and triage console: real RPM spec scans, version-range matching, patch availability and a reviewable triage queue."
     />
     <link rel="stylesheet" href="styles.css" />
     <link
@@ -26,19 +26,16 @@
           </span>
           <span class="brand-text">
             <strong>VULNEX</strong>
-            <small>Azure Linux CVE Intelligence</small>
+            <small>Azure Linux CVE Console</small>
           </span>
         </a>
 
         <nav class="nav" id="nav">
           <a href="#/" data-route="dashboard"><span class="dot"></span>Dashboard</a>
           <a href="#/affected" data-route="affected"><span class="dot"></span>Affected</a>
-          <a href="#/patched" data-route="patched"><span class="dot"></span>Already Patched</a>
-          <a href="#/cves" data-route="cves"><span class="dot"></span>All CVEs</a>
           <a href="#/packages" data-route="packages"><span class="dot"></span>Packages</a>
-          <a href="#/assignments" data-route="assignments"><span class="dot"></span>Patch Queue</a>
+          <a href="#/triage" data-route="triage"><span class="dot"></span>Triage</a>
           <a href="#/scan" data-route="scan"><span class="dot"></span>Scan</a>
-          <a href="#/about" data-route="about"><span class="dot"></span>Methodology</a>
         </nav>
 
         <div class="sidebar-foot">
@@ -56,6 +53,12 @@
             <p id="page-sub" class="muted">Azure Linux vulnerability posture</p>
           </div>
           <div class="topbar-actions">
+            <button class="btn btn-ghost btn-sm" id="share-btn" title="Copy a shareable link to this view">Share&nbsp;link</button>
+            <div class="auth-area" id="auth-area">
+              <button class="btn btn-sm btn-primary" id="login-btn" type="button">Login as admin</button>
+              <span class="identity-chip" id="identity-chip" hidden></span>
+              <button class="btn btn-ghost btn-sm" id="logout-btn" type="button" hidden>Sign out</button>
+            </div>
             <div class="last-scan" id="last-scan">No scan yet</div>
             <button class="btn btn-primary" id="scan-now">Scan&nbsp;Now</button>
           </div>
@@ -68,6 +71,73 @@
 
     <div class="drawer-backdrop" id="backdrop" hidden></div>
     <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+    <div class="modal-backdrop" id="login-modal" hidden>
+      <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="login-title">
+        <h2 id="login-title">Sign in as admin</h2>
+        <p class="muted small" style="margin:0">
+          VULNEX is read-only until an admin signs in. Use your email and password,
+          or continue with the GitHub account on the allow-list.
+        </p>
+        <input class="input" id="login-email" type="email" placeholder="email" autocomplete="username" />
+        <input class="input" id="login-password" type="password" placeholder="password" autocomplete="current-password" />
+        <p class="muted small" id="login-error" hidden style="margin:8px 0 0;color:var(--critical)"></p>
+        <div class="toolbar" style="margin:14px 0 0;justify-content:flex-end;gap:8px">
+          <button class="btn btn-ghost" id="login-cancel" type="button">Cancel</button>
+          <button class="btn btn-primary" id="login-submit" type="button">Sign in</button>
+        </div>
+        <div id="login-github-wrap" hidden style="margin-top:12px;border-top:1px solid var(--border);padding-top:12px">
+          <a class="btn btn-ghost" id="login-github" href="/api/auth/github" style="width:100%;justify-content:center">
+            Continue with GitHub
+          </a>
+          <p class="muted small" id="login-github-hint" style="margin:8px 0 0"></p>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-backdrop" id="dispute-modal" hidden>
+      <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="dispute-title">
+        <h2 id="dispute-title">Raise a dispute</h2>
+        <p class="muted small" style="margin:0" id="dispute-target"></p>
+        <textarea class="input" id="dispute-reason" rows="4" placeholder="Why is this verdict wrong? (recorded under the triage comments)"></textarea>
+        <div class="toolbar" style="margin:12px 0 0;justify-content:flex-end;gap:8px">
+          <button class="btn btn-ghost" id="dispute-cancel" type="button">Cancel</button>
+          <button class="btn btn-primary" id="dispute-submit" type="button">Submit dispute</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-backdrop" id="pr-modal" hidden>
+      <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="pr-title">
+        <h2 id="pr-title">Set the GitHub CVE PR</h2>
+        <p class="muted small" style="margin:0" id="pr-target"></p>
+        <input class="input" id="pr-number" placeholder="PR number (e.g. 19015)" autocomplete="off" />
+        <input class="input" id="pr-url" placeholder="PR URL (optional — derived if blank)" autocomplete="off" />
+        <div class="toolbar" style="margin:12px 0 0;justify-content:flex-end;gap:8px">
+          <button class="btn btn-ghost" id="pr-cancel" type="button">Cancel</button>
+          <button class="btn btn-primary" id="pr-submit" type="button">Set PR</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-backdrop" id="patch-modal" hidden>
+      <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="patch-title">
+        <h2 id="patch-title">Patch availability</h2>
+        <p class="muted small" style="margin:0" id="patch-target"></p>
+        <label class="muted small" for="patch-verdict">Final verdict</label>
+        <select class="select" id="patch-verdict">
+          <option value="">No override</option>
+          <option value="Patch Available">Patch Available</option>
+          <option value="No Patch Found">No Patch Found</option>
+        </select>
+        <input class="input" id="patch-link" placeholder="Patch link (override)" autocomplete="off" />
+        <input class="input" id="patch-since" placeholder="Available since (YYYY-MM-DD)" autocomplete="off" />
+        <div class="toolbar" style="margin:12px 0 0;justify-content:flex-end;gap:8px">
+          <button class="btn btn-ghost" id="patch-cancel" type="button">Cancel</button>
+          <button class="btn btn-primary" id="patch-submit" type="button">Save verdict</button>
+        </div>
+      </div>
+    </div>
 
     <script src="app.js"></script>
   </body>
