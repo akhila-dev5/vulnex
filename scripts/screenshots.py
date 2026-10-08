@@ -72,11 +72,10 @@ def main() -> int:
     shots = [
         ("dashboard", "#/", 2200),
         ("affected", "#/affected", 1800),
-        ("patched", "#/patched", 1500),
         ("packages", "#/packages", 1500),
         ("cve-detail", f"#/cve/{_pick_cve()}", 2600),
-        ("project", "#/project", 2000),
-        ("methodology", "#/about", 1200),
+        ("triage", "#/triage", 2400),
+        ("scan", "#/scan", 1600),
     ]
 
     with sync_playwright() as p:

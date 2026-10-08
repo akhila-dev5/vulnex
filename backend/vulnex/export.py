@@ -16,18 +16,20 @@ import json
 import shutil
 from pathlib import Path
 
-from . import config, db
+from . import config, db, triage
 
 __all__ = ["export_site", "default_out_dir"]
 
 # The public export is always the read-only tier: there is no backend behind it,
-# and the baked role keeps every editor-only control out of the UI.
+# and the baked role keeps every triage control out of the UI.
 _STATIC_INJECT = (
     '    <script>window.VULNEX_STATIC = { base: "./", generated: "%(generated)s", '
-    'role: "viewer", write_enabled: false };</script>\n'
-    '    <div class="static-banner" role="note"><b>Read-only showcase</b> — a static '
-    'snapshot of this VULNEX scan. Queuing work and triage comments need editor access; '
-    'search, sorting and paging all run in your browser.</div>\n'
+    'role: "viewer", write_enabled: false, can_comment: false, can_dispute: false, '
+    'can_triage: false, can_scan: false, can_set_patch_verdict: false, can_set_pr: false }'
+    ';</script>\n'
+    '    <div class="static-banner" role="note"><b>Read-only</b> — static snapshot. '
+    'Triage, disputes and PR updates run on the live server (`vulnex serve`); search, '
+    'sorting and paging run in your browser.</div>\n'
 )
 
 # Keep the payload lean: trim long free-text fields that are not rendered in full.
@@ -76,10 +78,18 @@ def export_site(
 
     # 2. JSON snapshot.
     conn = db.connect(db_path)
+    # Make sure the snapshot carries the current schema (triage tables included)
+    # before any query touches them.
+    db.init_db(conn)
     try:
         stats = db.stats(conn)
         stats["repository"] = config.repository_metadata()
-        findings, _ = db.list_findings(conn, limit=1_000_000)
+        stats["roles"] = config.roles_metadata()
+        # Only open exposures are exported: the static snapshot has no backend,
+        # so the filter has to be baked in.
+        findings, _ = db.list_findings(
+            conn, status=config.OPEN_STATUS, limit=1_000_000
+        )
         packages, _ = db.list_packages(conn, limit=1_000_000)
         patches = [
             dict(r) for r in conn.execute("SELECT * FROM patches ORDER BY id").fetchall()
@@ -87,14 +97,22 @@ def export_site(
         for p in patches:
             p["cve_ids"] = db.loads(p.get("cve_ids"), [])
         history = db.scan_history(conn, limit=25)
+        triage_rows = db.all_triage_records(conn)
 
-        from .api import methodology as methodology_payload
+        # Bake the Patch Availability panel so a static read-only page renders
+        # it with no backend. The Deep view and the tracker links are pure
+        # functions of data that is already shipped, so the SPA derives those
+        # client-side instead of bloating the snapshot.
+        for finding in findings:
+            _trim_finding(finding)
+            finding["triage"] = None
+            finding["patch_availability"] = triage.patch_availability(finding)
 
         api_dir = out / "api"
         _write(api_dir / "stats.json", stats)
-        _write(api_dir / "methodology.json", methodology_payload())
-        _write(api_dir / "findings.json", [_trim_finding(f) for f in findings])
+        _write(api_dir / "findings.json", findings)
         _write(api_dir / "packages.json", packages)
+        _write(api_dir / "triage.json", triage_rows)
         _write(api_dir / "patches.json", patches)
         _write(
             api_dir / "scans.json",

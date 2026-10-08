@@ -6,6 +6,7 @@ locally, in CI, and inside GitHub Actions without code changes.
 
 from __future__ import annotations
 
+import hmac
 import os
 import shutil
 import subprocess
@@ -45,34 +46,103 @@ CORROBORATION_ECOSYSTEMS = [
 # The AI patch-remediation workflow will only ever target this repository.
 PATCH_TARGET_REPO = os.environ.get("VULNEX_PATCH_TARGET_REPO", "akhila-dev5/azurelinux-test")
 
-# This project's own repository, linked from the dashboard.
+# This project's own repository (links in the README, not shown in the tool UI).
 PROJECT_REPO = os.environ.get("VULNEX_PROJECT_REPO", "akhila-dev5/vulnex")
 PROJECT_REPO_URL = os.environ.get(
     "VULNEX_PROJECT_REPO_URL", f"https://github.com/{PROJECT_REPO}"
 )
-# Hosted read-only showcase URL, shown to visitors once Pages/Vercel is live.
-DEMO_URL = os.environ.get("VULNEX_DEMO_URL", "")
 
-# Portfolio metadata rendered on the Project page.
-AUTHOR_NAME = os.environ.get("VULNEX_AUTHOR_NAME", "Akhila Guruju")
-AUTHOR_URL = os.environ.get("VULNEX_AUTHOR_URL", "")
-AUTHOR_GITHUB = os.environ.get("VULNEX_AUTHOR_GITHUB", f"https://github.com/{REPO_OWNER}")
-# Rendered only when set, so nothing is claimed on the author's behalf.
-AUTHOR_TAGLINE = os.environ.get("VULNEX_AUTHOR_TAGLINE", "")
+# Site scope ----------------------------------------------------------------
+# The console is about open exposures. A finding the distro has already fixed
+# (``patched``), explicitly ruled out (a ``.nopatch`` marker → ``false_positive``)
+# or could not classify (``unconfirmed``) is scanner output, not something this
+# site shows. Every list, CVE page and export is restricted to this status, so
+# an already-fixed CVE never appears in the UI.
+OPEN_STATUS = "affected"
 
-# Access tiers --------------------------------------------------------------
-# Two roles share one dashboard:
-#   viewer  read-only showcase (no assigning, no triage comments)
-#   editor  can queue work and leave triage comments
-# Setting VULNEX_EDITOR_KEY requires that key for every write. With it unset the
-# server stays in local "open editor" mode so development is never blocked; the
-# static Pages export is always a viewer.
-EDITOR_KEY = os.environ.get("VULNEX_EDITOR_KEY")
+# Access tiers ---------------------------------------------------------------
+# One team tool, three tiers. The tool is read-only by default.
+#
+#   viewer      anyone with the link: reads everything, writes nothing
+#   admin       the human lead. Signs in with **email + password**, or with
+#               **GitHub** (any account whose login is on the allow-list), and
+#               receives an opaque session token. Full triage: patch verdicts,
+#               disputes, comments, GitHub PR reference, queueing and scans.
+#   automation  a narrowly-scoped machine identity that presents one static key
+#               and may only set the GitHub CVE pull request (nothing else).
+#
+# There is no shared "access key" for people any more: a human credential is a
+# session minted by /api/auth/login, never a long-lived string handed around.
+ROLE_VIEWER = "viewer"
+ROLE_ADMIN = "admin"
+ROLE_AUTOMATION = "automation"
+
+# Admin identity shown in the UI and stored on triage records.
+ADMIN_IDENTITY = os.environ.get("VULNEX_ADMIN_IDENTITY", "akhila-dev5")
+ADMIN_EMAIL = os.environ.get("VULNEX_ADMIN_EMAIL", "").strip().lower()
+
+# The admin password. Set the PBKDF2 hash (preferred — generate it with
+# ``python -m vulnex.cli hash-password``); the plaintext form is only a
+# convenience for local development. Neither value is ever served by the API.
+ADMIN_PASSWORD_HASH = os.environ.get("VULNEX_ADMIN_PASSWORD_HASH", "").strip()
+ADMIN_PASSWORD = os.environ.get("VULNEX_ADMIN_PASSWORD", "")
+
+# GitHub authentication for the admin. Create a GitHub OAuth App with the
+# callback ``<deployment>/api/auth/github/callback`` and set the two credentials;
+# a login is accepted only when it matches this allow-list.
+ADMIN_GITHUB = os.environ.get("VULNEX_ADMIN_GITHUB", "akhila-dev5").strip().lower()
+GITHUB_OAUTH_CLIENT_ID = os.environ.get("GITHUB_OAUTH_CLIENT_ID", "").strip()
+GITHUB_OAUTH_CLIENT_SECRET = os.environ.get("GITHUB_OAUTH_CLIENT_SECRET", "").strip()
+# Explicit redirect URI for deployments behind a proxy, where the request URL is
+# not the public one. Defaults to the callback route on this host.
+GITHUB_OAUTH_REDIRECT = os.environ.get("VULNEX_GITHUB_REDIRECT", "").strip()
+
+# The automation machine identity keeps a static key (it is a machine, not a
+# person, and rotates per deployment).
+AUTOMATION_IDENTITY = os.environ.get("VULNEX_AUTOMATION_IDENTITY", "vulnex-sec")
+AUTOMATION_EMAIL = os.environ.get(
+    "VULNEX_AUTOMATION_EMAIL", "vulnexsecurityautomation@gmail.com"
+)
+AUTOMATION_KEY = os.environ.get("VULNEX_AUTOMATION_KEY") or "vulnex-sec"
+
+# How long a sign-in stays valid (seconds).
+SESSION_TTL = int(os.environ.get("VULNEX_SESSION_TTL", str(12 * 3600)))
 
 
-def editor_key_required() -> bool:
-    """True when writes must present ``X-VULNEX-Key: $VULNEX_EDITOR_KEY``."""
-    return bool(EDITOR_KEY)
+def password_login_configured() -> bool:
+    """True when the email + password login can actually be offered."""
+    return bool(ADMIN_EMAIL and (ADMIN_PASSWORD_HASH or ADMIN_PASSWORD))
+
+
+def github_login_configured() -> bool:
+    """True when a GitHub OAuth app is configured for admin sign-in."""
+    return bool(GITHUB_OAUTH_CLIENT_ID and GITHUB_OAUTH_CLIENT_SECRET)
+
+
+def role_for_key(presented_key: str | None) -> str:
+    """Map a machine key to a role, or ``viewer`` when it matches nothing.
+
+    Compared with ``hmac.compare_digest`` so a wrong key cannot be found by
+    timing. Only the automation identity authenticates this way.
+    """
+    if not presented_key:
+        return ROLE_VIEWER
+    if AUTOMATION_KEY and hmac.compare_digest(presented_key, AUTOMATION_KEY):
+        return ROLE_AUTOMATION
+    return ROLE_VIEWER
+
+
+def identity_for(role: str) -> dict:
+    """Identity metadata for a resolved role (never includes the key)."""
+    if role == ROLE_ADMIN:
+        return {"identity": ADMIN_IDENTITY, "email": ADMIN_EMAIL, "kind": "admin"}
+    if role == ROLE_AUTOMATION:
+        return {
+            "identity": AUTOMATION_IDENTITY,
+            "email": AUTOMATION_EMAIL,
+            "kind": "automation",
+        }
+    return {"identity": "anonymous", "email": "", "kind": "viewer"}
 
 # Endpoints ----------------------------------------------------------------
 GITHUB_API = "https://api.github.com"
@@ -126,20 +196,31 @@ def user_agent() -> str:
 
 
 def repository_metadata() -> dict:
-    """Repository + portfolio metadata shared by the API and the static export."""
+    """Scan-target metadata shared by the API and the static export.
+
+    Deliberately tool-shaped: the dashboard is a security scanner, not a
+    portfolio page, so no author/bio/architecture fields leak into the UI.
+    """
     return {
         "owner": REPO_OWNER,
         "repo": REPO_NAME,
         "branches": list(DEFAULT_BRANCHES),
         "ecosystem": OSV_ECOSYSTEM,
         "patch_target_repo": PATCH_TARGET_REPO,
-        "project_repo": PROJECT_REPO,
-        "project_url": PROJECT_REPO_URL,
-        "demo_url": DEMO_URL,
-        "author": {
-            "name": AUTHOR_NAME,
-            "url": AUTHOR_URL,
-            "github": AUTHOR_GITHUB,
-            "tagline": AUTHOR_TAGLINE,
+    }
+
+
+def roles_metadata() -> dict:
+    """The two authenticated identities, by name only — never the keys."""
+    return {
+        "admin": {
+            "identity": ADMIN_IDENTITY,
+            "email": ADMIN_EMAIL,
+            "capabilities": ["triage", "dispute", "comment", "scan", "assign", "patch_verdict", "set_pr"],
+        },
+        "automation": {
+            "identity": AUTOMATION_IDENTITY,
+            "email": AUTOMATION_EMAIL,
+            "capabilities": ["set_pr"],
         },
     }

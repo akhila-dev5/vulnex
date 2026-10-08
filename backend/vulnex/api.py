@@ -14,11 +14,11 @@ from typing import Any
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import __version__, config, db
+from . import __version__, auth, config, db, triage
 from .enrichment import enrich_cve
 from .scanner import ScanOptions, run_scan
 
@@ -125,33 +125,85 @@ manager = ScanManager()
 
 
 # -- access tiers -----------------------------------------------------------
-# Two roles share one dashboard. ``viewer`` is the read-only showcase used for
-# public/recruiter links; ``editor`` can queue work and leave triage comments.
-# Writes require the ``X-VULNEX-Key`` header once ``VULNEX_EDITOR_KEY`` is set; a
-# server without that key is in local "open editor" mode.
-ROLE_VIEWER = "viewer"
-ROLE_EDITOR = "editor"
+# The tool is read-only by default. A request presents its credential in the
+# ``X-VULNEX-Key`` header and resolves to one of three roles:
+#
+#   viewer      anonymous: reads everything, writes nothing
+#   admin       full triage (patch verdicts, disputes, comments, PR reference,
+#               queueing work, starting scans). The credential is an opaque
+#               session token minted by ``/api/auth/login`` from an email +
+#               password, or by the GitHub callback — never a shared static key.
+#   automation  the machine key that may ONLY set the GitHub CVE PR
+ROLE_VIEWER = config.ROLE_VIEWER
+ROLE_ADMIN = config.ROLE_ADMIN
+ROLE_AUTOMATION = config.ROLE_AUTOMATION
+
+_CAPABILITIES = {
+    ROLE_ADMIN: {
+        "triage", "dispute", "comment", "scan", "assign", "patch_verdict", "set_pr",
+    },
+    ROLE_AUTOMATION: {"set_pr"},
+    ROLE_VIEWER: set(),
+}
 
 
-def _presented_key(request: Request) -> str | None:
+def _presented_credential(request: Request) -> str | None:
     return request.headers.get("x-vulnex-key") or None
 
 
 def resolve_role(request: Request) -> str:
-    if not config.editor_key_required():
-        return ROLE_EDITOR
-    key = _presented_key(request)
-    return ROLE_EDITOR if key and key == config.EDITOR_KEY else ROLE_VIEWER
+    """Resolve the caller's role from the presented credential.
+
+    An admin session token wins; anything else is treated as a machine key and
+    can only ever be the narrowly-scoped automation identity. A missing or
+    unknown credential is always read-only.
+    """
+    credential = _presented_credential(request)
+    if not credential:
+        return ROLE_VIEWER
+    if auth.sessions.get(credential):
+        return ROLE_ADMIN
+    return config.role_for_key(credential)
 
 
-def require_editor(request: Request) -> None:
-    """Raise 401 for viewers so a write can never slip through the UI gate."""
-    if resolve_role(request) != ROLE_EDITOR:
+def capabilities(role: str) -> dict:
+    granted = _CAPABILITIES.get(role, set())
+    return {
+        "write_enabled": role == ROLE_ADMIN,
+        "can_comment": "comment" in granted,
+        "can_dispute": "dispute" in granted,
+        "can_triage": "triage" in granted,
+        "can_scan": "scan" in granted,
+        "can_set_patch_verdict": "patch_verdict" in granted,
+        "can_set_pr": "set_pr" in granted,
+    }
+
+
+def require_admin(request: Request) -> str:
+    """Raise 401 unless the caller is the admin identity."""
+    role = resolve_role(request)
+    if role != ROLE_ADMIN:
         raise HTTPException(
             status_code=401,
-            detail="Read-only view: this action needs editor access. "
-                   "Send an X-VULNEX-Key header with the editor key.",
+            detail="Read-only access: this action needs an admin sign-in. "
+                   "Sign in with your email and password and retry.",
         )
+    return role
+
+
+def require_pr_setter(request: Request) -> str:
+    """Raise 401 unless the caller may set the GitHub CVE PR.
+
+    Only the admin and the narrowly-scoped ``automation`` identity qualify; a
+    viewer and any other caller are refused.
+    """
+    role = resolve_role(request)
+    if "set_pr" not in _CAPABILITIES.get(role, set()):
+        raise HTTPException(
+            status_code=401,
+            detail="Setting the GitHub CVE PR needs the automation identity or admin.",
+        )
+    return role
 
 
 # -- request models ---------------------------------------------------------
@@ -173,7 +225,31 @@ class AssignmentRequest(BaseModel):
 
 class CommentRequest(BaseModel):
     body: str
-    author: str = "editor"
+    cve_id: str | None = None
+    branch: str = ""
+    spec_path: str = ""
+    author: str | None = None
+
+
+class FindingRef(BaseModel):
+    cve_id: str
+    branch: str = ""
+    spec_path: str = ""
+
+
+class DisputeRequest(FindingRef):
+    reason: str
+
+
+class GithubPRRequest(FindingRef):
+    number: str
+    url: str = ""
+
+
+class PatchVerdictRequest(FindingRef):
+    final_verdict: str = ""
+    patch_link: str = ""
+    available_since: str = ""
 
 
 # -- read endpoints ---------------------------------------------------------
@@ -184,13 +260,103 @@ def health() -> dict:
 
 @app.get("/api/role")
 def get_role(request: Request) -> dict:
-    """Which tier the caller is in, so the UI can hide editor-only actions."""
+    """Which tier the caller is in, so the UI can show only permitted actions.
+
+    Also tells the sign-in dialog which methods this deployment actually offers,
+    so it never shows a button that cannot work.
+    """
     role = resolve_role(request)
+    session = auth.sessions.get(_presented_credential(request))
     return {
         "role": role,
-        "write_enabled": role == ROLE_EDITOR,
-        "key_required": config.editor_key_required(),
+        "identity": config.identity_for(role),
+        "methods": {
+            "password": config.password_login_configured(),
+            "github": config.github_login_configured(),
+            "github_login": config.ADMIN_GITHUB,
+        },
+        "expires_at": session["expires_at"] if session else None,
+        **capabilities(role),
     }
+
+
+# -- authentication ---------------------------------------------------------
+class LoginRequest(BaseModel):
+    email: str = ""
+    password: str = ""
+
+
+def _callback_url(request: Request) -> str:
+    """The GitHub OAuth redirect URI (override it behind a reverse proxy)."""
+    return config.GITHUB_OAUTH_REDIRECT or str(request.url_for("auth_github_callback"))
+
+
+@app.post("/api/auth/login")
+def auth_login(payload: LoginRequest) -> dict:
+    """Sign in as admin with email + password and mint a session token."""
+    if not config.password_login_configured():
+        raise HTTPException(
+            status_code=503,
+            detail="Password sign-in is not configured on this server. Set "
+                   "VULNEX_ADMIN_EMAIL and VULNEX_ADMIN_PASSWORD_HASH.",
+        )
+    if not auth.password_login(payload.email, payload.password):
+        raise HTTPException(status_code=401, detail="Email or password is incorrect.")
+    token, session = auth.sessions.create(
+        config.identity_for(ROLE_ADMIN), method="password"
+    )
+    return {
+        "token": token,
+        "role": ROLE_ADMIN,
+        "identity": session["identity"],
+        "method": "password",
+        "expires_at": session["expires_at"],
+        **capabilities(ROLE_ADMIN),
+    }
+
+
+@app.post("/api/auth/logout")
+def auth_logout(request: Request) -> dict:
+    """Drop the caller's session token (a no-op for the machine key)."""
+    return {"signed_out": auth.sessions.drop(_presented_credential(request))}
+
+
+@app.get("/api/auth/github")
+def auth_github(request: Request) -> RedirectResponse:
+    """Start GitHub sign-in for the admin allow-list."""
+    if not config.github_login_configured():
+        raise HTTPException(
+            status_code=503,
+            detail="GitHub sign-in is not configured on this server. Set "
+                   "GITHUB_OAUTH_CLIENT_ID and GITHUB_OAUTH_CLIENT_SECRET.",
+        )
+    state = auth.new_oauth_state()
+    return RedirectResponse(auth.github_authorize_url(_callback_url(request), state))
+
+
+@app.get("/api/auth/github/callback", name="auth_github_callback")
+def auth_github_callback(
+    request: Request, code: str = "", state: str = ""
+) -> RedirectResponse:
+    """Finish GitHub sign-in and hand the SPA its session token."""
+    if not config.github_login_configured():
+        raise HTTPException(status_code=503, detail="GitHub sign-in is not configured.")
+    if not auth.consume_oauth_state(state):
+        raise HTTPException(
+            status_code=400, detail="The GitHub sign-in link expired. Please try again."
+        )
+    user = auth.github_exchange(code, _callback_url(request))
+    login = (user or {}).get("login")
+    if not auth.github_login_allowed(login):
+        raise HTTPException(
+            status_code=403,
+            detail="This GitHub account is not allowed to sign in as admin.",
+        )
+    identity = {**config.identity_for(ROLE_ADMIN), "identity": login or config.ADMIN_IDENTITY}
+    token, _ = auth.sessions.create(identity, method="github")
+    # The token rides in the fragment, so it never reaches a server log or a
+    # Referer header on the way back to the dashboard.
+    return RedirectResponse(f"/#vulnex_token={token}")
 
 
 @app.get("/api/stats")
@@ -198,7 +364,31 @@ def get_stats() -> dict:
     with db.session() as conn:
         data = db.stats(conn)
     data["repository"] = config.repository_metadata()
+    data["roles"] = config.roles_metadata()
     return data
+
+
+def _decorate_findings(
+    conn,
+    findings: list[dict],
+    package: dict | None = None,
+    enrichment: dict | None = None,
+) -> list[dict]:
+    """Attach triage state, patch availability, links and the Deep view."""
+    for finding in findings:
+        finding["triage"] = db.get_triage(
+            conn, finding["cve_id"], finding.get("branch", ""), finding.get("spec_path", "")
+        )
+        triage.decorate_finding(finding, package, enrichment)
+    return findings
+
+
+def _package_for(conn, finding: dict) -> dict | None:
+    """Resolve the owning package row so Deep can name the source tarball."""
+    return db.get_package(
+        conn, finding.get("package_name", ""), finding.get("branch"),
+        spec_path=finding.get("spec_path"),
+    )
 
 
 @app.get("/api/packages")
@@ -219,6 +409,13 @@ def get_packages(
 def get_package(name: str, branch: str | None = None, spec: str | None = None) -> dict:
     with db.session() as conn:
         pkg = db.get_package(conn, name, branch, spec_path=spec)
+        if pkg:
+            # Open exposures only — a package page never lists what is fixed.
+            pkg["findings"] = [
+                f for f in pkg.get("findings", [])
+                if f.get("status") == config.OPEN_STATUS
+            ]
+            _decorate_findings(conn, pkg["findings"], package=pkg)
     if not pkg:
         raise HTTPException(status_code=404, detail="Package not found")
     return pkg
@@ -226,7 +423,6 @@ def get_package(name: str, branch: str | None = None, spec: str | None = None) -
 
 @app.get("/api/findings")
 def get_findings(
-    status: str = "",
     severity: str = "",
     search: str = "",
     package: str = "",
@@ -234,10 +430,16 @@ def get_findings(
     page: int = 1,
     limit: int = Query(100, ge=1, le=1000),
 ) -> dict:
+    """Open exposures only.
+
+    There is deliberately no ``status`` filter: the site only ever serves
+    findings that are still ``affected``, never the CVEs this distro has already
+    fixed or ruled out. A stray ``?status=`` is simply ignored.
+    """
     with db.session() as conn:
         rows, total = db.list_findings(
             conn,
-            status=status,
+            status=config.OPEN_STATUS,
             severity=severity,
             search=search,
             package=package,
@@ -245,6 +447,7 @@ def get_findings(
             limit=limit,
             offset=(page - 1) * limit,
         )
+        _decorate_findings(conn, rows)
     return {"items": rows, "total": total, "page": page, "limit": limit}
 
 
@@ -252,7 +455,12 @@ def get_findings(
 def get_cve(cve_id: str, enrich: bool = True) -> dict:
     cve_id = cve_id.upper()
     with db.session() as conn:
-        findings = db.findings_for_cve(conn, cve_id)
+        # A CVE page only exists while the CVE is still open here: once every
+        # branch has backported it there is nothing left to triage.
+        findings = [
+            f for f in db.findings_for_cve(conn, cve_id)
+            if f.get("status") == config.OPEN_STATUS
+        ]
         cached = db.get_cached_cve(conn, cve_id)
         assignment = None
         for a in db.list_assignments(conn):
@@ -260,7 +468,7 @@ def get_cve(cve_id: str, enrich: bool = True) -> dict:
                 assignment = a
                 break
 
-    if not findings and not cached:
+    if not findings:
         raise HTTPException(status_code=404, detail="CVE not found in the current scan")
 
     enrichment = cached
@@ -272,14 +480,146 @@ def get_cve(cve_id: str, enrich: bool = True) -> dict:
         except Exception:  # pragma: no cover - network failures are non-fatal
             enrichment = None
 
+    with db.session() as conn:
+        for finding in findings:
+            finding["triage"] = db.get_triage(
+                conn, finding["cve_id"], finding.get("branch", ""),
+                finding.get("spec_path", ""),
+            )
+            triage.decorate_finding(finding, _package_for(conn, finding), enrichment)
+
     return {
         "cve_id": cve_id,
         "findings": findings,
         "enrichment": enrichment,
         "assignment": assignment,
+        "links": triage.website_links(cve_id),
     }
 
 
+@app.get("/api/cves/{cve_id}/deep")
+def get_cve_deep(cve_id: str, branch: str = "", spec: str = "") -> dict:
+    """The Deep view: files inside the package tarball that this CVE touches."""
+    cve_id = cve_id.upper()
+    with db.session() as conn:
+        finding = db.get_finding(conn, cve_id, spec_path=spec or None) if spec else None
+        if finding is not None and finding.get("status") != config.OPEN_STATUS:
+            finding = None
+        if finding is None:
+            results = [
+                f for f in db.findings_for_cve(conn, cve_id)
+                if f.get("status") == config.OPEN_STATUS
+            ]
+            if branch:
+                results = [f for f in results if f.get("branch") == branch] or results
+            finding = results[0] if results else None
+        if finding is None:
+            raise HTTPException(status_code=404, detail="CVE not found in the current scan")
+        return triage.deep_view(finding, _package_for(conn, finding))
+
+
+@app.get("/api/triage")
+def get_triage_list(
+    status: str = config.OPEN_STATUS,
+    search: str = "",
+    page: int = 1,
+    limit: int = Query(50, ge=1, le=200),
+) -> dict:
+    """Open exposures joined with their triage record, for the triage table."""
+    with db.session() as conn:
+        rows, total = db.list_triage(
+            conn, status=config.OPEN_STATUS, search=search,
+            limit=limit, offset=(page - 1) * limit,
+        )
+        for row in rows:
+            triage.decorate_finding(row, None)
+    return {"items": rows, "total": total, "page": page, "limit": limit}
+
+
+@app.post("/api/triage/comment")
+def add_triage_comment(payload: CommentRequest, request: Request) -> dict:
+    """Admin-only triage comment on a specific finding."""
+    role = require_admin(request)
+    body = (payload.body or "").strip()
+    if not body:
+        raise HTTPException(status_code=400, detail="Comment body is required")
+    if not payload.cve_id:
+        raise HTTPException(status_code=400, detail="cve_id is required")
+    author = (payload.author or config.ADMIN_IDENTITY).strip()
+    with db.session() as conn:
+        comment = db.add_finding_comment(
+            conn, payload.cve_id.upper(), payload.branch, payload.spec_path, body, author
+        )
+    return {"comment": comment, "role": role}
+
+
+@app.post("/api/triage/dispute")
+def raise_dispute(payload: DisputeRequest, request: Request) -> dict:
+    """Admin-only dispute. The reason lands under the triage comments."""
+    require_admin(request)
+    reason = (payload.reason or "").strip()
+    if not reason:
+        raise HTTPException(status_code=400, detail="A dispute needs a reason")
+    cve_id = payload.cve_id.upper()
+    with db.session() as conn:
+        comment = db.add_finding_comment(
+            conn, cve_id, payload.branch, payload.spec_path, reason,
+            config.ADMIN_IDENTITY, kind="dispute",
+        )
+        record = db.upsert_triage(
+            conn, cve_id, payload.branch, payload.spec_path,
+            triage_status="disputed", resolution_status="in_progress",
+        )
+    return {"comment": comment, "triage": record}
+
+
+@app.post("/api/triage/github-pr")
+def set_github_pr(payload: GithubPRRequest, request: Request) -> dict:
+    """Set the GitHub CVE PR. Allowed for the automation identity and admin."""
+    role = require_pr_setter(request)
+    number = (payload.number or "").strip().lstrip("#")
+    if not number:
+        raise HTTPException(status_code=400, detail="PR number is required")
+    cve_id = payload.cve_id.upper()
+    url = (payload.url or "").strip() or (
+        f"https://github.com/{config.PATCH_TARGET_REPO}/pull/{number}"
+    )
+    identity = config.identity_for(role).get("identity") or role
+    with db.session() as conn:
+        record = db.upsert_triage(
+            conn,
+            cve_id,
+            payload.branch,
+            payload.spec_path,
+            github_pr_number=number,
+            github_pr_url=url,
+            github_pr_set_by=identity,
+            github_pr_set_at=db.utcnow(),
+            resolution_status="in_progress",
+            owner=config.ADMIN_EMAIL or config.ADMIN_IDENTITY,
+        )
+    return {"triage": record, "role": role, "identity": identity}
+
+
+@app.post("/api/triage/patch")
+def set_patch_verdict(payload: PatchVerdictRequest, request: Request) -> dict:
+    """Admin-only override of the patch availability verdict/link."""
+    require_admin(request)
+    cve_id = payload.cve_id.upper()
+    with db.session() as conn:
+        record = db.upsert_triage(
+            conn,
+            cve_id,
+            payload.branch,
+            payload.spec_path,
+            final_verdict=payload.final_verdict.strip(),
+            patch_link=payload.patch_link.strip(),
+            available_since=payload.available_since.strip(),
+        )
+    return {"triage": record}
+
+
+# -- assignment queue -------------------------------------------------------
 @app.get("/api/assignments")
 def get_assignments() -> dict:
     with db.session() as conn:
@@ -288,7 +628,7 @@ def get_assignments() -> dict:
 
 @app.post("/api/assignments")
 def create_assignment(payload: AssignmentRequest, request: Request) -> dict:
-    require_editor(request)
+    require_admin(request)
     target = payload.target_repo or config.PATCH_TARGET_REPO
     with db.session() as conn:
         finding = db.get_finding(
@@ -309,7 +649,7 @@ def create_assignment(payload: AssignmentRequest, request: Request) -> dict:
 
 @app.patch("/api/assignments/{assignment_id}")
 def patch_assignment(assignment_id: int, request: Request, status: str = Query(...)) -> dict:
-    require_editor(request)
+    require_admin(request)
     with db.session() as conn:
         record = db.update_assignment(conn, assignment_id, status)
     if not record:
@@ -321,8 +661,8 @@ def patch_assignment(assignment_id: int, request: Request, status: str = Query(.
 def add_assignment_comment(
     assignment_id: int, payload: CommentRequest, request: Request
 ) -> dict:
-    """Editor-only triage comment on a queued finding."""
-    require_editor(request)
+    """Admin-only triage comment on a queued finding."""
+    require_admin(request)
     body = (payload.body or "").strip()
     if not body:
         raise HTTPException(status_code=400, detail="Comment body is required")
@@ -330,7 +670,8 @@ def add_assignment_comment(
         if not db.get_assignment(conn, assignment_id):
             raise HTTPException(status_code=404, detail="Assignment not found")
         comment = db.add_comment(
-            conn, assignment_id, body, author=(payload.author or "editor").strip() or "editor"
+            conn, assignment_id, body,
+            author=(payload.author or config.ADMIN_IDENTITY).strip(),
         )
     return {"comment": comment}
 
@@ -338,7 +679,7 @@ def add_assignment_comment(
 # -- scan control -----------------------------------------------------------
 @app.post("/api/scan")
 def start_scan(request: Request, payload: ScanRequest | None = None) -> JSONResponse:
-    require_editor(request)
+    require_admin(request)
     payload = payload or ScanRequest()
     options = ScanOptions(
         branches=payload.branches or list(config.DEFAULT_BRANCHES),
@@ -364,39 +705,6 @@ def scan_status() -> dict:
 def scan_history() -> dict:
     with db.session() as conn:
         return {"items": db.scan_history(conn)}
-
-
-@app.get("/api/methodology")
-def methodology() -> dict:
-    return {
-        "sources": [
-            {
-                "name": "OSV.dev — Azure Linux advisories",
-                "role": "Primary detection. Official Microsoft Azure Linux advisory data "
-                        "with RPM version-release fixed events.",
-                "url": "https://osv.dev/list?ecosystem=Azure%20Linux%3A3",
-            },
-            {"name": "NVD", "role": "CVSS severity, CWE and references.", "url": "https://nvd.nist.gov"},
-            {"name": "MITRE CVE", "role": "Authoritative CVE identity and description.",
-             "url": "https://cve.mitre.org"},
-            {"name": "Red Hat Security Data", "role": "Corroboration, fixed versions and "
-             "RPM package state.", "url": "https://access.redhat.com/security/data/metrics"},
-            {"name": "GitHub Security Advisories", "role": "Corroboration and upstream fix "
-             "locator.", "url": "https://github.com/advisories"},
-            {"name": "Debian / Ubuntu / Alpine (via OSV)", "role": "Cross-distribution "
-             "corroboration of CVE identifiers.", "url": "https://osv.dev"},
-        ],
-        "statuses": {
-            "affected": "Version-range match confirms exposure and no distro backport exists.",
-            "patched": "A Patch: entry in the .spec file backports the fix.",
-            "false_positive": "A CVE-*.nopatch marker explicitly marks the CVE not applicable.",
-            "unconfirmed": "Advisory mentions the package but range data is insufficient; "
-                           "flagged for review.",
-        },
-        "range_matching": "RPM EVR comparison (rpmvercmp port) against OSV introduced/fixed "
-                          "events, evaluated locally for traceability.",
-        "patch_target_repo": config.PATCH_TARGET_REPO,
-    }
 
 
 # -- static frontend --------------------------------------------------------

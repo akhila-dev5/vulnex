@@ -32,7 +32,7 @@ Python 3.10+ · FastAPI · SQLite · build-free vanilla JS · GitHub Actions · 
 - [CLI reference](#cli-reference)
 - [API reference](#api-reference)
 - [Dashboard tour](#dashboard-tour)
-- [Sharing the dashboard and the two access tiers](#sharing-the-dashboard-and-the-two-access-tiers)
+- [Sharing the dashboard and the three access tiers](#sharing-the-dashboard-and-the-three-access-tiers)
 - [Scheduled scanning and GitHub Pages](#scheduled-scanning-and-github-pages)
 - [Patch automation interface](#patch-automation-interface)
 - [Tests](#tests)
@@ -54,10 +54,16 @@ Python 3.10+ · FastAPI · SQLite · build-free vanilla JS · GitHub Actions · 
   (including the `~` and `^` separators).
 - **Classifies instead of guessing.** Every CVE/package pair ends up as
   **Affected**, **Already Patched**, **False Positive** or **Unconfirmed**, each with a
-  confidence score and human-readable evidence.
+  confidence score and human-readable evidence (the console then shows only the
+  **Affected** ones).
 - **Shows patch provenance.** For each finding it knows the backport patch file, whether
   that file actually exists in the repo, whether it is a `*.nopatch` "not affected"
   marker, and (where available) the upstream fix commit and the files it touched.
+- **Shows only open exposures.** The console is deliberately scoped to CVEs this
+  distro has *not* fixed. A backported CVE, an explicit `.nopatch` "not affected"
+  marker, or an advisory too vague to classify is scanner output, not a finding — it
+  never appears in the UI. Dashboard totals, severity splits and the static export are
+  all restricted to open exposures, and the dashboard reports how many were excluded.
 - **Ships a security-ops dashboard** with totals, severity distribution, searchable
   tables and CVE detail pages.
 - **Has a hand-off point for automated remediation.** "Assign to Patch Automation"
@@ -268,6 +274,10 @@ Current committed snapshot (`data/vulnex.db`), branches `3.0-dev` + `fasttrack/3
 > yet report `unknown` rather than inventing a score. The enrichment cap is configurable
 > (`--enrich-limit`, default 400 in the scheduled workflow).
 
+> **Scope.** The console lists the **Affected** rows only. Patched, `.nopatch` and
+> unconfirmed findings are scanner output the site deliberately hides: the dashboard
+> reports them as a single "excluded" number, and the static export never ships them.
+
 ---
 
 ## Quickstart
@@ -279,7 +289,7 @@ git clone https://github.com/akhila-dev5/vulnex.git
 cd vulnex
 
 make install            # creates backend/.venv and installs runtime + dev deps
-make test               # 41 tests
+make test               # 55 tests
 make serve              # http://localhost:8000  (live dashboard + Scan Now)
 ```
 
@@ -332,6 +342,7 @@ vulnex scan     Run a scan and replace the SQLite snapshot
 vulnex stats    Print dashboard totals as JSON
 vulnex serve    Serve the JSON API + dashboard (--host, --port, --db)
 vulnex export   Write the static GitHub Pages dashboard + JSON snapshot (--out)
+vulnex hash-password  Print a PBKDF2 hash to put in VULNEX_ADMIN_PASSWORD_HASH
 ```
 
 ---
@@ -344,17 +355,26 @@ vulnex export   Write the static GitHub Pages dashboard + JSON snapshot (--out)
 | `GET` | `/api/stats` | Totals, severity split, last scan, repository config |
 | `GET` | `/api/packages` | Paged package list (`search`, `branch`, `page`, `limit`) |
 | `GET` | `/api/packages/{name}` | Package detail incl. patches, findings and spec variants (`branch`, `spec`) |
-| `GET` | `/api/findings` | Paged findings (`status`, `severity`, `search`, `package`, `branch`) |
+| `GET` | `/api/findings` | Paged **open exposures** (`severity`, `search`, `package`, `branch`) — CVEs already fixed are never returned |
 | `GET` | `/api/cves/{cve_id}` | All findings for a CVE + live enrichment (`?enrich=false` to skip) |
-| `GET` | `/api/role` | Access tier for the caller (`viewer` / `editor`), from the presented editor key |
+| `GET` | `/api/cves/{cve_id}/deep` | Deep patch analysis for one finding: affected files, source tarball, backport patches (`branch`, `spec`) |
+| `GET` | `/api/triage` | Every finding's baked triage view (status, resolution, owner, PR, patch verdict) |
+| `GET` | `/api/role` | Access tier (`viewer` / `admin` / `automation`), granted capabilities and which sign-in methods are configured |
+| `POST` | `/api/auth/login` | Admin sign-in with `email` + `password`; returns an opaque session token (`401` bad credential, `503` unconfigured) |
+| `POST` | `/api/auth/logout` | Drop the caller's session token |
+| `GET` | `/api/auth/github` | Start GitHub sign-in (302 to GitHub; `503` when no OAuth app is configured) |
+| `GET` | `/api/auth/github/callback` | Finish GitHub sign-in for the allow-listed account and redirect back with `#vulnex_token=…` |
+| `POST` | `/api/triage/comment` | Admin only — add a triage comment to a finding (`cve_id`, `branch`, `spec_path`, `body`) |
+| `POST` | `/api/triage/dispute` | Admin only — raise a dispute (`reason`) and move the finding to `in_progress` |
+| `POST` | `/api/triage/github-pr` | Admin **or** automation — set the GitHub CVE PR (`number`, `url?`) |
+| `POST` | `/api/triage/patch` | Admin only — override the patch-availability verdict / link / available-since |
 | `GET` | `/api/assignments` | Patch-automation queue with its triage comments |
-| `POST` | `/api/assignments` | Editor only — queue a finding (`cve_id`, `package_name`, `spec_path?`, `notes`) |
-| `PATCH` | `/api/assignments/{id}` | Editor only — update queue status (`?status=`) |
-| `POST` | `/api/assignments/{id}/comments` | Editor only — add a triage comment (`body`) |
-| `POST` | `/api/scan` | Editor only — start a scan in the background (`202`, `409` if busy, `401` for viewers) |
+| `POST` | `/api/assignments` | Admin only — queue a finding (`cve_id`, `package_name`, `spec_path?`, `notes`) |
+| `PATCH` | `/api/assignments/{id}` | Admin only — update queue status (`?status=`) |
+| `POST` | `/api/assignments/{id}/comments` | Admin only — add a triage comment (`body`) |
+| `POST` | `/api/scan` | Admin only — start a scan in the background (`202`, `409` if busy, `401` otherwise) |
 | `GET` | `/api/scan/status` | Live scan progress log + last scan |
 | `GET` | `/api/scans` | Scan history |
-| `GET` | `/api/methodology` | Machine-readable methodology (powers the Methodology page) |
 
 Interactive docs are at `http://localhost:8000/docs` when `vulnex serve` is running.
 
@@ -370,16 +390,19 @@ Interactive docs are at `http://localhost:8000/docs` when `vulnex serve` is runn
 | --- | --- |
 | ![CVE detail](docs/screenshots/cve-detail.jpg) | ![Packages](docs/screenshots/packages.jpg) |
 
-| Methodology | Project (portfolio view) |
+| Triage queue | Scan control |
 | --- | --- |
-| ![Methodology](docs/screenshots/methodology.jpg) | ![Project](docs/screenshots/project.jpg) |
+| ![Triage](docs/screenshots/triage.jpg) | ![Scan](docs/screenshots/scan.jpg) |
 
-Views: **Dashboard** (KPIs, severity donut, verification outcome, last scan),
-**Affected** / **Already Patched** / **All CVEs** (searchable, filterable, paged tables),
+Views: **Dashboard** (open-exposure KPIs, severity donut, scope note, last scan),
+**Affected** (searchable, filterable, paged open exposures),
 **Packages** (every spec, with source-tarball availability), **Package detail** (sources,
-patches, affected/patched CVEs, spec variants), **CVE detail** (verification evidence,
-references, "Assign to Patch Automation"), **Patch Queue**, **Scan** (Scan Now + history),
-**Project** (the build, its engineering log and the author card), **Methodology**.
+patches, the package's open exposures, spec variants), **CVE detail** (Original Vector, NVD
+published date, cross-tracker links, the advisory description and a triaged-severity
+card), **Triage** (the security-ops queue: one row per finding with patch availability,
+triage and resolution status, fixed version, owner and a per-row **Actions** menu and
+**Deep** patch panel), and **Scan** (Scan Now + history). The signed-in tier adds the
+actions themselves — dispute, patch verdict, GitHub PR and scan control.
 
 Regenerate the screenshots with:
 
@@ -390,52 +413,68 @@ make screenshots        # writes docs/screenshots/*.jpg
 
 ---
 
-## Sharing the dashboard and the two access tiers
+## Sharing the dashboard and the three access tiers
 
-One dashboard, two audiences. Visitors get a read-only showcase; the maintainer
-gets an editor workspace.
+One dashboard, three tiers. Anyone with the link reads it; the security lead triages
+it; a narrowly-scoped machine identity feeds the GitHub PR reference back in.
 
-| | **Viewer** — the link you share | **Editor** — you |
-| --- | --- | --- |
-| How it runs | the static export (`site/`, GitHub Pages) or any live server with `VULNEX_EDITOR_KEY` set | `vulnex serve` with the editor key |
-| Can read | every finding, patch, verification note, confidence score, queue and triage trail | same |
-| Can write | nothing — the hosted copy is a static snapshot with no backend | assign CVEs to patch automation, move queue status, leave triage comments, start scans |
-| Enforcement | `staticApi()` refuses every non-GET; no server exists to write to | every write endpoint answers `401` without `X-VULNEX-Key` |
+| | **Viewer** — anyone with the link | **Admin** — the security lead | **Automation** — the machine identity |
+| --- | --- | --- | --- |
+| How it runs | the static export (`site/`, GitHub Pages) or any live server, until someone signs in | `vulnex serve` + `VULNEX_ADMIN_EMAIL` / `VULNEX_ADMIN_PASSWORD_HASH` (or a GitHub OAuth app) | `vulnex serve` + `VULNEX_AUTOMATION_KEY` |
+| How they get in | they do not — no credential, no sign-in | email + password, or GitHub for the allow-listed account; the server returns a session token | presents its static key; no sign-in flow |
+| Can read | every open exposure, patch note, confidence score and triage trail | same | same |
+| Can write | nothing — the hosted copy is a static snapshot with no backend | dispute, comment, patch verdict, GitHub PR, queue and scan control | the GitHub CVE PR **only** |
+| Enforcement | `staticApi()` refuses every non-GET; no server exists to write to | every admin endpoint answers `401` without a live session token | every endpoint except `POST /api/triage/github-pr` answers `401` |
 
-**How to share it with recruiters, interviewers or a team.**
+**How to share it with a security team.**
 
 1. **Static showcase (recommended).** `make export` builds `site/`, and the scheduled
    workflow publishes it to GitHub Pages — a free, permanent link anyone can open
    without an account. This is the read-only tier by construction: `window.VULNEX_STATIC`
    is baked with `role: "viewer"`, the header shows *Read-only view* and the assign /
    comment / scan controls are not rendered at all.
-2. **Live server.** `make serve` gives the full interactive app on `:8000`. Every write
-   needs the editor key:
+2. **Live server.** `make serve` gives the full interactive app on `:8000`. Configure the
+   admin credential (and the machine key for the automation tier) before exposing it:
 
    ```bash
-   VULNEX_EDITOR_KEY='pick-a-long-passphrase' \
-     python -m vulnex.cli serve --host 0.0.0.0 --port 8000
+   export VULNEX_ADMIN_EMAIL='you@example.com'
+   export VULNEX_ADMIN_PASSWORD_HASH="$(python -m vulnex.cli hash-password)"
+   export VULNEX_AUTOMATION_KEY='a-scoped-machine-secret'
+   python -m vulnex.cli serve --host 0.0.0.0 --port 8000
    ```
 
-   Without the key the server stays in local *open editor* mode so development is never
-   blocked — set the key before exposing a live server to anyone else. In the UI, click
-   the red *Read-only view* chip, paste the key, and the header flips to *Editor mode*;
-   the key is kept in `localStorage` and sent as an `X-VULNEX-Key` header.
+   Password sign-in is **unavailable until you configure it**: `/api/auth/login` answers
+   `503` and the dialog disables the form. In the UI, click **Login as admin** in the
+   header and enter the email + password; the admin identity chip appears, and the
+   session token is kept in `localStorage` and sent as `X-VULNEX-Key` on every request
+   (the password itself is never stored in the browser). **Sign out** revokes the token.
+   Prefer GitHub? Create a GitHub OAuth App whose callback is
+   `<deployment>/api/auth/github/callback`, set `GITHUB_OAUTH_CLIENT_ID` /
+   `GITHUB_OAUTH_CLIENT_SECRET`, and the *Continue with GitHub* button appears. Only the
+   account in `VULNEX_ADMIN_GITHUB` (default `akhila-dev5`) may sign in that way; any
+   other GitHub account is refused with `403` before a session is minted.
 3. **Share link button.** The `Share link` button in the header copies the current view
    (including its hash route) so you can hand someone the exact CVE or package you are
    talking about.
 
-Portfolio metadata for the **Project** page comes from the environment, so nothing is
-claimed on the author's behalf:
+Every credential is deployment-owned and read from the environment:
 
-| Variable | Default | Used for |
+| Variable | Default | Tier / use |
 | --- | --- | --- |
-| `VULNEX_AUTHOR_NAME` | `Akhila Guruju` | the "Built by" card |
-| `VULNEX_AUTHOR_GITHUB` | `https://github.com/<repo owner>` | GitHub link |
-| `VULNEX_AUTHOR_URL` | *(empty)* | personal site / profile link, hidden when unset |
-| `VULNEX_AUTHOR_TAGLINE` | *(empty)* | one-line role line, hidden when unset |
-| `VULNEX_PROJECT_REPO` | `akhila-dev5/vulnex` | "Source code" link and the `git clone` line |
-| `VULNEX_DEMO_URL` | *(empty)* | "Live demo" link, hidden when unset |
+| `VULNEX_ADMIN_EMAIL` | *(empty — password sign-in disabled)* | admin sign-in identifier |
+| `VULNEX_ADMIN_PASSWORD_HASH` | *(empty)* | admin password as a PBKDF2 hash (`vulnex hash-password`) |
+| `VULNEX_ADMIN_PASSWORD` | *(empty)* | plaintext alternative for local development only |
+| `VULNEX_ADMIN_GITHUB` | `akhila-dev5` | the only GitHub account allowed to sign in as admin |
+| `GITHUB_OAUTH_CLIENT_ID` / `GITHUB_OAUTH_CLIENT_SECRET` | *(empty — GitHub sign-in hidden)* | GitHub OAuth App |
+| `VULNEX_GITHUB_REDIRECT` | derived from the request | explicit callback URL behind a proxy |
+| `VULNEX_SESSION_TTL` | `43200` (12 h) | session lifetime in seconds |
+| `VULNEX_AUTOMATION_KEY` | `vulnex-sec` | automation — only `POST /api/triage/github-pr` |
+| `VULNEX_ADMIN_IDENTITY` | `akhila-dev5` | admin identity shown in the UI and stored on triage records |
+| `VULNEX_AUTOMATION_IDENTITY` / `VULNEX_AUTOMATION_EMAIL` | `vulnex-sec` / `vulnexsecurityautomation@gmail.com` | automation identity |
+
+There is no shared access key for people any more: a human credential is a session
+minted by `/api/auth/login`, and it expires. Only the automation machine identity still
+presents a long-lived static key.
 
 ---
 
@@ -481,7 +520,7 @@ items, and **PRs are only ever opened against the configured target repository**
 ## Tests
 
 ```bash
-cd backend && python -m pytest -q     # 41 passed
+cd backend && python -m pytest -q     # 55 passed
 ```
 
 | File | Covers |
@@ -489,9 +528,9 @@ cd backend && python -m pytest -q     # 41 passed
 | `tests/test_rpmvercmp.py` | EVR comparison, `~` / `^`, separators, case, epoch |
 | `tests/test_spec_parser.py` | macro expansion, CVE extraction, commented-out patches, `.nopatch`, patch-file presence |
 | `tests/test_verification.py` | status precedence, backport overriding OSV, corroboration, Azure Linux `last_affected` semantics |
-| `tests/test_api.py` | API surface, snapshot identity across duplicate package names, assignment flow, static frontend serving |
-| `tests/test_export.py` | static Pages export: static flag injection, rehydrated references, finding counts, scan history |
-| `tests/test_access.py` | access tiers: viewers get 401 on every write, editors can assign/comment, open mode without a key |
+| `tests/test_api.py` | API surface, snapshot identity across duplicate package names, assignment flow, triage endpoints, static frontend serving |
+| `tests/test_export.py` | static Pages export: static flag injection, rehydrated references, baked triage views, finding counts, scan history |
+| `tests/test_access.py` | access tiers: viewers get 401 on every write, the automation key can only set the GitHub PR, email/password sign-in mints a revocable session, the GitHub callback refuses a forged state and a non-allow-listed account |
 
 The suite runs against fixtures and never touches the network.
 
@@ -513,9 +552,10 @@ vulnex/
 │   │   ├── scanner.py        the 7-stage scan pipeline
 │   │   ├── db.py             SQLite schema and queries
 │   │   ├── export.py         static GitHub Pages export
+│   │   ├── auth.py           password hashing, admin sessions, GitHub OAuth
 │   │   ├── api.py            FastAPI app + Scan Now manager
 │   │   └── cli.py            `vulnex` command line
-│   ├── tests/                33 pytest tests
+│   ├── tests/                55 pytest tests
 │   ├── requirements.txt      runtime deps (fastapi, uvicorn, requests, pydantic)
 │   └── requirements-dev.txt  + pytest, httpx
 ├── frontend/                 build-free SPA (index.html, styles.css, app.js)

@@ -123,6 +123,41 @@ CREATE TABLE IF NOT EXISTS assignment_comments (
     created_at TEXT
 );
 
+CREATE TABLE IF NOT EXISTS finding_triage (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    cve_id TEXT NOT NULL,
+    branch TEXT NOT NULL DEFAULT '',
+    spec_path TEXT NOT NULL DEFAULT '',
+    package_name TEXT,
+    triage_status TEXT DEFAULT 'open',
+    resolution_status TEXT DEFAULT '',
+    final_verdict TEXT DEFAULT '',
+    patch_link TEXT DEFAULT '',
+    available_since TEXT DEFAULT '',
+    github_pr_number TEXT DEFAULT '',
+    github_pr_url TEXT DEFAULT '',
+    github_pr_set_by TEXT DEFAULT '',
+    github_pr_set_at TEXT,
+    owner TEXT DEFAULT '',
+    vuln_id TEXT DEFAULT '',
+    qualys_ids TEXT DEFAULT '',
+    updated_at TEXT,
+    UNIQUE(cve_id, branch, spec_path)
+);
+
+-- Human triage trail for a finding: ordinary comments plus 'dispute' entries,
+-- where the dispute reason is what shows up underneath the triage comment.
+CREATE TABLE IF NOT EXISTS finding_comments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    cve_id TEXT NOT NULL,
+    branch TEXT NOT NULL DEFAULT '',
+    spec_path TEXT NOT NULL DEFAULT '',
+    kind TEXT DEFAULT 'comment',
+    author TEXT,
+    body TEXT NOT NULL,
+    created_at TEXT
+);
+
 CREATE TABLE IF NOT EXISTS cve_cache (
     cve_id TEXT PRIMARY KEY,
     payload TEXT,
@@ -137,6 +172,8 @@ CREATE INDEX IF NOT EXISTS idx_patches_package ON patches(package_name);
 CREATE INDEX IF NOT EXISTS idx_packages_name ON packages(name);
 CREATE INDEX IF NOT EXISTS idx_findings_spec ON findings(branch, spec_path);
 CREATE INDEX IF NOT EXISTS idx_comments_assignment ON assignment_comments(assignment_id);
+CREATE INDEX IF NOT EXISTS idx_triage_key ON finding_triage(cve_id, branch, spec_path);
+CREATE INDEX IF NOT EXISTS idx_finding_comments_key ON finding_comments(cve_id, branch, spec_path);
 """
 
 
@@ -301,22 +338,28 @@ def stats(conn: sqlite3.Connection) -> dict:
             base += " WHERE " + " AND ".join(where)
         return conn.execute(base).fetchone()["c"]
 
+    # The site's subject is open exposures only; severity and CVE counts are
+    # restricted to them so the dashboard never mixes in fixed CVEs.
+    open_where = f"status = '{config.OPEN_STATUS}'"
+    open_total = count(open_where)
     severity = {
-        s: count(f"severity = '{s}'")
+        s: count(f"{open_where} AND severity = '{s}'")
         for s in ("critical", "high", "medium", "low", "none", "unknown")
     }
     scan = latest_scan(conn) or {}
     return {
         "total_packages": packages,
-        "total_findings": total,
-        "affected": count("status = 'affected'"),
+        "total_findings": open_total,
+        "affected": open_total,
+        "severity": severity,
+        "distinct_cves": conn.execute(
+            f"SELECT COUNT(DISTINCT cve_id) c FROM findings WHERE {open_where}"
+        ).fetchone()["c"],
+        # Scanner output the site deliberately does not show.
         "patched": count("status = 'patched'"),
         "false_positive": count("status = 'false_positive'"),
         "unconfirmed": count("status = 'unconfirmed'"),
-        "severity": severity,
-        "distinct_cves": conn.execute(
-            "SELECT COUNT(DISTINCT cve_id) c FROM findings"
-        ).fetchone()["c"],
+        "excluded_findings": total - open_total,
         "total_patches": conn.execute("SELECT COUNT(*) c FROM patches").fetchone()["c"],
         "nopatch_markers": conn.execute(
             "SELECT COUNT(*) c FROM patches WHERE is_nopatch = 1"
@@ -362,10 +405,10 @@ def list_packages(
         grouped = conn.execute(
             f"""
             SELECT branch, spec_path, status, COUNT(*) c FROM findings
-            WHERE spec_path IN ({placeholders})
+            WHERE spec_path IN ({placeholders}) AND status = ?
             GROUP BY branch, spec_path, status
             """,
-            tuple(spec_paths),
+            (*spec_paths, config.OPEN_STATUS),
         ).fetchall()
         for g in grouped:
             key = (g["branch"], g["spec_path"])
@@ -659,6 +702,203 @@ def update_assignment(conn: sqlite3.Connection, assignment_id: int, status: str)
     conn.commit()
     row = conn.execute("SELECT * FROM assignments WHERE id = ?", (assignment_id,)).fetchone()
     return dict(row) if row else None
+
+
+# -- finding triage ---------------------------------------------------------
+# Triage is keyed by the finding identity: (cve_id, branch, spec_path). It holds
+# the human verdict/patch call, the GitHub PR reference and the triage trail.
+_TRIAGE_FIELDS = (
+    "package_name",
+    "triage_status",
+    "resolution_status",
+    "final_verdict",
+    "patch_link",
+    "available_since",
+    "github_pr_number",
+    "github_pr_url",
+    "github_pr_set_by",
+    "github_pr_set_at",
+    "owner",
+    "vuln_id",
+    "qualys_ids",
+)
+
+
+def get_triage(
+    conn: sqlite3.Connection, cve_id: str, branch: str = "", spec_path: str = ""
+) -> dict | None:
+    row = conn.execute(
+        "SELECT * FROM finding_triage WHERE cve_id = ? AND branch = ? AND spec_path = ?",
+        (cve_id, branch or "", spec_path or ""),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def upsert_triage(
+    conn: sqlite3.Connection,
+    cve_id: str,
+    branch: str,
+    spec_path: str,
+    **fields: Any,
+) -> dict:
+    """Create or partially update the triage record for one finding."""
+    cve_id, branch, spec_path = cve_id, branch or "", spec_path or ""
+    updates = {k: v for k, v in fields.items() if k in _TRIAGE_FIELDS}
+    now = utcnow()
+    if not get_triage(conn, cve_id, branch, spec_path):
+        conn.execute(
+            "INSERT INTO finding_triage (cve_id, branch, spec_path, updated_at) "
+            "VALUES (?, ?, ?, ?)",
+            (cve_id, branch, spec_path, now),
+        )
+    if updates:
+        assignments = ", ".join(f"{k} = ?" for k in updates)
+        conn.execute(
+            f"UPDATE finding_triage SET {assignments}, updated_at = ? "
+            "WHERE cve_id = ? AND branch = ? AND spec_path = ?",
+            (*updates.values(), now, cve_id, branch, spec_path),
+        )
+    conn.commit()
+    return get_triage(conn, cve_id, branch, spec_path) or {}
+
+
+def add_finding_comment(
+    conn: sqlite3.Connection,
+    cve_id: str,
+    branch: str,
+    spec_path: str,
+    body: str,
+    author: str = "admin",
+    kind: str = "comment",
+) -> dict | None:
+    """Append a triage comment (or a ``dispute`` entry) to a finding."""
+    cursor = conn.execute(
+        "INSERT INTO finding_comments (cve_id, branch, spec_path, kind, author, body, "
+        "created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (cve_id, branch or "", spec_path or "", kind, author, body, utcnow()),
+    )
+    conn.commit()
+    row = conn.execute(
+        "SELECT * FROM finding_comments WHERE id = ?", (cursor.lastrowid,)
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def finding_comments(
+    conn: sqlite3.Connection, cve_id: str, branch: str = "", spec_path: str = ""
+) -> list[dict]:
+    return _rows(
+        conn,
+        "SELECT * FROM finding_comments WHERE cve_id = ? AND branch = ? AND spec_path = ? "
+        "ORDER BY id",
+        (cve_id, branch or "", spec_path or ""),
+    )
+
+
+def comments_by_finding(
+    conn: sqlite3.Connection, keys: Iterable[tuple[str, str, str]]
+) -> dict[tuple[str, str, str], list[dict]]:
+    """Group comments for many findings in one query."""
+    keys = list(keys)
+    if not keys:
+        return {}
+    clauses = " OR ".join(
+        "(cve_id = ? AND branch = ? AND spec_path = ?)" for _ in keys
+    )
+    params: list[Any] = [
+        value for key in keys for value in (key[0], key[1] or "", key[2] or "")
+    ]
+    out: dict[tuple[str, str, str], list[dict]] = {}
+    for row in _rows(
+        conn, f"SELECT * FROM finding_comments WHERE {clauses} ORDER BY id", params
+    ):
+        out.setdefault(
+            (row["cve_id"], row["branch"] or "", row["spec_path"] or ""), []
+        ).append(row)
+    return out
+
+
+def list_triage(
+    conn: sqlite3.Connection,
+    status: str = "affected",
+    search: str = "",
+    limit: int = 50,
+    offset: int = 0,
+) -> tuple[list[dict], int]:
+    """Findings joined with their triage record, newest triage activity first.
+
+    ``status`` filters on the *finding* status; pass ``""`` for every finding.
+    """
+    clauses, params = [], []
+    if status:
+        clauses.append("f.status = ?")
+        params.append(status)
+    if search:
+        clauses.append("(f.cve_id LIKE ? OR f.package_name LIKE ?)")
+        params.extend([f"%{search}%", f"%{search}%"])
+    where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
+    total = conn.execute(
+        f"SELECT COUNT(*) c FROM findings f{where}", tuple(params)
+    ).fetchone()["c"]
+    rows = _rows(
+        conn,
+        f"""
+        SELECT f.*, t.id AS triage_id, t.triage_status, t.resolution_status,
+               t.final_verdict, t.patch_link, t.available_since,
+               t.github_pr_number, t.github_pr_url, t.github_pr_set_by,
+               t.github_pr_set_at, t.owner, t.vuln_id, t.qualys_ids
+        FROM findings f
+        LEFT JOIN finding_triage t
+          ON t.cve_id = f.cve_id AND t.branch = f.branch AND t.spec_path = f.spec_path
+        {where}
+        ORDER BY (t.updated_at IS NULL), t.updated_at DESC, f.cve_id
+        LIMIT ? OFFSET ?
+        """,
+        [*params, limit, offset],
+    )
+    _FLAT = (
+        "triage_status", "resolution_status", "final_verdict", "patch_link",
+        "available_since", "github_pr_number", "github_pr_url", "github_pr_set_by",
+        "github_pr_set_at", "owner", "vuln_id", "qualys_ids",
+    )
+    comments = comments_by_finding(
+        conn, [(r["cve_id"], r["branch"], r["spec_path"]) for r in rows]
+    )
+    for row in rows:
+        _hydrate_finding(row)
+        record = None
+        if row.pop("triage_id", None):
+            record = {
+                "cve_id": row["cve_id"],
+                "branch": row["branch"],
+                "spec_path": row["spec_path"],
+                "comments": [],
+            }
+            for key in _FLAT:
+                record[key] = row.pop(key, None) or ""
+        else:
+            for key in _FLAT:
+                row.pop(key, None)
+        if record is not None:
+            record["comments"] = comments.get(
+                (row["cve_id"], row["branch"] or "", row["spec_path"] or ""), []
+            )
+        row["triage"] = record
+        row["comments"] = record["comments"] if record else []
+    return rows, total
+
+
+def all_triage_records(conn: sqlite3.Connection) -> list[dict]:
+    """Every triage record with its trail, for the static export."""
+    rows = _rows(conn, "SELECT * FROM finding_triage ORDER BY id DESC")
+    comments = comments_by_finding(
+        conn, [(r["cve_id"], r["branch"], r["spec_path"]) for r in rows]
+    )
+    for row in rows:
+        row["comments"] = comments.get(
+            (row["cve_id"], row["branch"] or "", row["spec_path"] or ""), []
+        )
+    return rows
 
 
 # -- CVE enrichment cache ---------------------------------------------------
