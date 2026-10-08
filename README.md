@@ -259,14 +259,15 @@ Current committed snapshot (`data/vulnex.db`), branches `3.0-dev` + `fasttrack/3
 | Metric | Value |
 | --- | --- |
 | Packages scanned | **3,098** (1,549 specs × 2 branches) |
-| Findings | **8,163** |
-| Distinct CVEs referenced | **3,106** |
-| Affected | 5,018 |
+| Findings in the snapshot | **8,167** |
+| **Open exposures (listed)** | **5,022** |
+| Distinct CVEs among them | **1,970** |
 | Already patched | 3,105 |
 | False positive (`.nopatch`) | 32 |
 | Unconfirmed | 8 |
+| Excluded from the console | 3,145 |
 | Patch entries parsed | 5,385 |
-| Critical / High / Medium / Low | 78 / 648 / 656 / 142 |
+| Critical / High / Medium / Low (open only) | 30 / 748 / 1,066 / 168 |
 | Cold scan time | ~2 min (warm cache ~20 s) |
 
 > Severity is populated from advisory CVSS data and then enriched from
