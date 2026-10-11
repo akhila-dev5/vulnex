@@ -21,6 +21,7 @@ from pydantic import BaseModel
 from . import __version__, auth, config, db, triage
 from .enrichment import enrich_cve
 from .scanner import ScanOptions, run_scan
+from .sources.vulnerabilitydata import FeedError, VulnerabilityDataSource
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
@@ -516,6 +517,65 @@ def get_cve_deep(cve_id: str, branch: str = "", spec: str = "") -> dict:
         if finding is None:
             raise HTTPException(status_code=404, detail="CVE not found in the current scan")
         return triage.deep_view(finding, _package_for(conn, finding))
+
+
+
+# -- VulnerabilityData feed (pre-computed NVD inventory) ---------------------
+def _vuln_data_source() -> VulnerabilityDataSource:
+    return VulnerabilityDataSource()
+
+
+@app.get("/api/vulnerability-data")
+def get_vulnerability_data(refresh: bool = False) -> dict:
+    """Summary of the NVD inventory the VulnerabilityData repo publishes.
+
+    It is produced from the azurelinux-test cgmanifest.json x NVD feeds, so it
+    covers exactly the versions registered in the manifest. ``?refresh=true``
+    re-fetches the feed instead of using the on-disk cache.
+    """
+    try:
+        return _vuln_data_source().summary(refresh=refresh)
+    except FeedError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+
+
+@app.get("/api/vulnerability-data/packages")
+def get_vulnerability_data_packages(
+    search: str = "",
+    page: int = 1,
+    limit: int = Query(50, ge=1, le=500),
+    refresh: bool = False,
+) -> dict:
+    """Paged package inventory from the VulnerabilityData feed."""
+    try:
+        packages = _vuln_data_source().packages(refresh=refresh)
+    except FeedError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+    if search:
+        needle = search.lower()
+        packages = [p for p in packages if needle in (p.get("name") or "").lower()]
+    total = len(packages)
+    start = (page - 1) * limit
+    return {
+        "items": packages[start:start + limit],
+        "total": total,
+        "page": page,
+        "limit": limit,
+    }
+
+
+@app.get("/api/vulnerability-data/packages/{name}")
+def get_vulnerability_data_package(name: str, refresh: bool = False) -> dict:
+    """One package's NVD/CVE inventory as published by VulnerabilityData."""
+    try:
+        pkg = _vuln_data_source().package(name, refresh=refresh)
+    except FeedError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+    if pkg is None:
+        raise HTTPException(
+            status_code=404, detail="Package not found in the VulnerabilityData feed"
+        )
+    return pkg
 
 
 @app.get("/api/triage")

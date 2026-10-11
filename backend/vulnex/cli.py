@@ -101,6 +101,29 @@ def _cmd_serve(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_vuln_data(args: argparse.Namespace) -> int:
+    """Show the pre-computed NVD inventory published by VulnerabilityData."""
+    from .sources.vulnerabilitydata import FeedError, VulnerabilityDataSource
+
+    source = VulnerabilityDataSource()
+    try:
+        if args.package:
+            pkg = source.package(args.package, refresh=args.refresh)
+            if pkg is None:
+                print(
+                    f"[vulnex] package not in the VulnerabilityData feed: {args.package}",
+                    file=sys.stderr,
+                )
+                return 1
+            print(json.dumps(pkg, indent=2))
+        else:
+            print(json.dumps(source.summary(refresh=args.refresh), indent=2))
+    except FeedError as exc:
+        print(f"[vulnex] {exc}", file=sys.stderr)
+        return 1
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="vulnex", description="Azure Linux CVE scanner")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -150,6 +173,22 @@ def build_parser() -> argparse.ArgumentParser:
         help="Password to hash (omit to be prompted, so it stays out of shell history)",
     )
     hashpw.set_defaults(func=_cmd_hash_password)
+
+    vuln_data = sub.add_parser(
+        "vuln-data",
+        help="Show the NVD inventory published by the VulnerabilityData repo",
+    )
+    vuln_data.add_argument(
+        "--package",
+        default="",
+        help="Print one package's CVE inventory instead of the feed summary",
+    )
+    vuln_data.add_argument(
+        "--refresh",
+        action="store_true",
+        help="Re-fetch the feed instead of using the on-disk cache",
+    )
+    vuln_data.set_defaults(func=_cmd_vuln_data)
 
     return parser
 

@@ -247,6 +247,7 @@ Two real examples from the current snapshot:
 | **Red Hat Security Data API** | Severity, fixed versions, `package_state` | free |
 | **GitHub Security Advisories** | Corroboration and upstream-fix discovery | free |
 | **GitHub tree/raw API** | Spec + patch collection | free (uses `GITHUB_TOKEN` in CI) |
+| **VulnerabilityData repo** | Pre-computed NVD inventory of every `cgmanifest.json` package version (OVAL + JSON, refreshed several times a day) | free |
 
 No OpenAI/Anthropic/AWS/Azure billing is involved anywhere.
 
@@ -340,6 +341,10 @@ vulnex scan     Run a scan and replace the SQLite snapshot
   --no-corroborate                     skip cross-distro corroboration
   --no-enrich                          skip NVD/MITRE/Red Hat/GHSA enrichment
 
+vulnex vuln-data  Show the NVD inventory published by VulnerabilityData
+  --package curl                   print one package's CVE inventory
+  --refresh                        re-fetch the feed instead of using the cache
+
 vulnex stats    Print dashboard totals as JSON
 vulnex serve    Serve the JSON API + dashboard (--host, --port, --db)
 vulnex export   Write the static GitHub Pages dashboard + JSON snapshot (--out)
@@ -357,6 +362,9 @@ vulnex hash-password  Print a PBKDF2 hash to put in VULNEX_ADMIN_PASSWORD_HASH
 | `GET` | `/api/packages` | Paged package list (`search`, `branch`, `page`, `limit`) |
 | `GET` | `/api/packages/{name}` | Package detail incl. patches, findings and spec variants (`branch`, `spec`) |
 | `GET` | `/api/findings` | Paged **open exposures** (`severity`, `search`, `package`, `branch`) — CVEs already fixed are never returned |
+| `GET` | `/api/vulnerability-data` | Summary of the pre-computed NVD inventory published by the VulnerabilityData repo (`?refresh=true` re-fetches) |
+| `GET` | `/api/vulnerability-data/packages` | Paged package inventory from that feed (`search`, `page`, `limit`) |
+| `GET` | `/api/vulnerability-data/packages/{name}` | One package's CVE list, versions and vulnerable ranges (`404` when unknown) |
 | `GET` | `/api/cves/{cve_id}` | All findings for a CVE + live enrichment (`?enrich=false` to skip) |
 | `GET` | `/api/cves/{cve_id}/deep` | Deep patch analysis for one finding: affected files, source tarball, backport patches (`branch`, `spec`) |
 | `GET` | `/api/triage` | Every finding's baked triage view (status, resolution, owner, PR, patch verdict) |
@@ -547,7 +555,7 @@ vulnex/
 │   │   ├── spec_parser.py    RPM spec parsing (macros, sources, patches)
 │   │   ├── rpmvercmp.py      RPM EVR comparison port
 │   │   ├── cvss.py           CVSS v3.0/v3.1 base-score maths
-│   │   ├── sources/          osv · nvd · mitre · redhat · ghsa clients
+│   │   ├── sources/          osv · nvd · mitre · redhat · ghsa · vulnerabilitydata clients
 │   │   ├── verification.py   status, confidence and evidence
 │   │   ├── enrichment.py     severity / refs / upstream-fix resolution
 │   │   ├── scanner.py        the 7-stage scan pipeline

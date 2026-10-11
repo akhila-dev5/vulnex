@@ -154,6 +154,26 @@ MITRE_CVE_API = "https://cveawg.mitre.org/api/cve"
 # Azure Linux binary/source blob store used to host release tarballs.
 BLOB_STORE_BASE = "https://azurelinuxsrcstorage.blob.core.windows.net/sources/core"
 
+# Pre-computed vulnerability data (VulnerabilityData repository) ------------
+# The VulnerabilityData repository scans the azurelinux-test cgmanifest.json
+# against the NVD JSON 2.0 feeds and publishes an OVAL document plus a
+# machine-readable per-package CVE inventory several times a day. VULNEX reads
+# that feed instead of re-running the NVD scan itself.
+VULNERABILITYDATA_REPO = os.environ.get(
+    "VULNEX_VULNERABILITYDATA_REPO", "akhila-dev5/VulnerabilityData"
+)
+VULNERABILITYDATA_BRANCH = os.environ.get("VULNEX_VULNERABILITYDATA_BRANCH", "main")
+VULNERABILITYDATA_JSON_URL = os.environ.get(
+    "VULNEX_VULNERABILITYDATA_JSON",
+    f"{GITHUB_RAW}/{VULNERABILITYDATA_REPO}/{VULNERABILITYDATA_BRANCH}"
+    "/data/azurelinux-test.json",
+)
+VULNERABILITYDATA_OVAL_URL = os.environ.get(
+    "VULNEX_VULNERABILITYDATA_OVAL",
+    f"{GITHUB_RAW}/{VULNERABILITYDATA_REPO}/{VULNERABILITYDATA_BRANCH}"
+    "/oval/azurelinux-test.xml",
+)
+
 # HTTP / scan tuning -------------------------------------------------------
 HTTP_TIMEOUT = int(os.environ.get("VULNEX_HTTP_TIMEOUT", "30"))
 SCAN_CONCURRENCY = int(os.environ.get("VULNEX_SCAN_CONCURRENCY", "16"))
@@ -207,6 +227,8 @@ def repository_metadata() -> dict:
         "branches": list(DEFAULT_BRANCHES),
         "ecosystem": OSV_ECOSYSTEM,
         "patch_target_repo": PATCH_TARGET_REPO,
+        "vulnerability_data": VULNERABILITYDATA_JSON_URL,
+        "vulnerability_data_oval": VULNERABILITYDATA_OVAL_URL,
     }
 
 
