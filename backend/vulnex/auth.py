@@ -2,23 +2,19 @@
 
 Two credentials exist, for two kinds of caller:
 
-* a human **admin**, who signs in with email + password, or with GitHub (any
-  account whose login is on the allow-list), and then presents the opaque session
-  token this module mints;
+* a human **admin**, who signs in with GitHub only (any account whose login is
+  on the allow-list) and then presents the opaque session token this module
+  mints;
 * the **automation** machine identity, which presents one static key and may only
   set the GitHub CVE pull request.
 
 Sessions live in memory on purpose: the tool has no user table, a restart is a
-deployment event, and a token is worthless once the process is gone. Passwords
-are stored as PBKDF2-SHA256 hashes (``python -m vulnex.cli hash-password``), never
-as plaintext, and neither the hash nor the password is ever served by the API.
+deployment event, and a token is worthless once the process is gone. There is no
+password credential anywhere.
 """
 
 from __future__ import annotations
 
-import base64
-import hashlib
-import hmac
 import secrets
 import threading
 import time
@@ -30,9 +26,6 @@ import requests
 from . import config
 
 __all__ = [
-    "hash_password",
-    "verify_password",
-    "password_login",
     "SessionStore",
     "sessions",
     "new_oauth_state",
@@ -42,59 +35,9 @@ __all__ = [
     "github_login_allowed",
 ]
 
-_ALGO = "pbkdf2_sha256"
-_ITERATIONS = 240_000
-_SALT_BYTES = 16
-
 _GITHUB_AUTHORIZE = "https://github.com/login/oauth/authorize"
 _GITHUB_TOKEN = "https://github.com/login/oauth/access_token"
 _GITHUB_USER = "https://api.github.com/user"
-
-
-# -- passwords --------------------------------------------------------------
-def hash_password(password: str, *, iterations: int = _ITERATIONS) -> str:
-    """``pbkdf2_sha256$iterations$salt$hash`` — safe to keep in the environment."""
-    if not password:
-        raise ValueError("password must not be empty")
-    salt = secrets.token_bytes(_SALT_BYTES)
-    digest = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, iterations)
-    return "$".join(
-        (
-            _ALGO,
-            str(iterations),
-            base64.b64encode(salt).decode(),
-            base64.b64encode(digest).decode(),
-        )
-    )
-
-
-def verify_password(password: str, encoded: str) -> bool:
-    """Constant-time check of a password against a stored PBKDF2 hash."""
-    if not password or not encoded:
-        return False
-    try:
-        algo, iterations, salt_b64, digest_b64 = encoded.split("$")
-        if algo != _ALGO:
-            return False
-        salt = base64.b64decode(salt_b64)
-        expected = base64.b64decode(digest_b64)
-        computed = hashlib.pbkdf2_hmac(
-            "sha256", password.encode(), salt, int(iterations)
-        )
-    except (ValueError, TypeError):
-        return False
-    return hmac.compare_digest(computed, expected)
-
-
-def password_login(email: str, password: str) -> bool:
-    """Validate an admin email + password against the configured credential."""
-    if not config.password_login_configured():
-        return False
-    if (email or "").strip().lower() != config.ADMIN_EMAIL:
-        return False
-    if config.ADMIN_PASSWORD_HASH:
-        return verify_password(password, config.ADMIN_PASSWORD_HASH)
-    return hmac.compare_digest(password or "", config.ADMIN_PASSWORD)
 
 
 # -- sessions ---------------------------------------------------------------

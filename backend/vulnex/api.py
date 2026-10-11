@@ -132,8 +132,8 @@ manager = ScanManager()
 #   viewer      anonymous: reads everything, writes nothing
 #   admin       full triage (patch verdicts, disputes, comments, PR reference,
 #               queueing work, starting scans). The credential is an opaque
-#               session token minted by ``/api/auth/login`` from an email +
-#               password, or by the GitHub callback — never a shared static key.
+#               session token minted by the GitHub callback — never a shared
+#               static key and never a password.
 #   automation  the machine key that may ONLY set the GitHub CVE PR
 ROLE_VIEWER = config.ROLE_VIEWER
 ROLE_ADMIN = config.ROLE_ADMIN
@@ -187,7 +187,7 @@ def require_admin(request: Request) -> str:
         raise HTTPException(
             status_code=401,
             detail="Read-only access: this action needs an admin sign-in. "
-                   "Sign in with your email and password and retry.",
+                   "Sign in with GitHub and retry.",
         )
     return role
 
@@ -272,7 +272,6 @@ def get_role(request: Request) -> dict:
         "role": role,
         "identity": config.identity_for(role),
         "methods": {
-            "password": config.password_login_configured(),
             "github": config.github_login_configured(),
             "github_login": config.ADMIN_GITHUB,
         },
@@ -282,38 +281,9 @@ def get_role(request: Request) -> dict:
 
 
 # -- authentication ---------------------------------------------------------
-class LoginRequest(BaseModel):
-    email: str = ""
-    password: str = ""
-
-
 def _callback_url(request: Request) -> str:
     """The GitHub OAuth redirect URI (override it behind a reverse proxy)."""
     return config.GITHUB_OAUTH_REDIRECT or str(request.url_for("auth_github_callback"))
-
-
-@app.post("/api/auth/login")
-def auth_login(payload: LoginRequest) -> dict:
-    """Sign in as admin with email + password and mint a session token."""
-    if not config.password_login_configured():
-        raise HTTPException(
-            status_code=503,
-            detail="Password sign-in is not configured on this server. Set "
-                   "VULNEX_ADMIN_EMAIL and VULNEX_ADMIN_PASSWORD_HASH.",
-        )
-    if not auth.password_login(payload.email, payload.password):
-        raise HTTPException(status_code=401, detail="Email or password is incorrect.")
-    token, session = auth.sessions.create(
-        config.identity_for(ROLE_ADMIN), method="password"
-    )
-    return {
-        "token": token,
-        "role": ROLE_ADMIN,
-        "identity": session["identity"],
-        "method": "password",
-        "expires_at": session["expires_at"],
-        **capabilities(ROLE_ADMIN),
-    }
 
 
 @app.post("/api/auth/logout")

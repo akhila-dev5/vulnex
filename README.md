@@ -8,7 +8,8 @@ exploitable, not a keyword soup.
 
 It runs entirely on free infrastructure: public vulnerability data, SQLite, a
 dependency-light FastAPI service, a build-free frontend, GitHub Actions for the
-scheduled scan, and GitHub Pages for the hosted dashboard.
+scheduled scan, GitHub Pages for the read-only static snapshot, and a Render free
+web service for the live console (API + admin GitHub sign-in).
 
 ```
 Python 3.10+ · FastAPI · SQLite · build-free vanilla JS · GitHub Actions · GitHub Pages
@@ -121,7 +122,8 @@ flowchart LR
     subgraph Serve["Delivery"]
         API["FastAPI<br/>JSON API + Scan Now"]
         SPA["Vanilla JS dashboard"]
-        PAGES["GitHub Pages<br/>(static export)"]
+        PAGES["GitHub Pages<br/>(static snapshot)"]
+        RENDER["Render free web service<br/>(live console)"]
     end
 
     GH --> COLLECT --> PARSE --> MATCH
@@ -133,6 +135,7 @@ flowchart LR
     GHSA -.-> ENRICH
     DB --> API --> SPA
     DB --> PAGES
+    API --> RENDER
 ```
 
 The scan pipeline, end to end:
@@ -291,7 +294,7 @@ git clone https://github.com/akhila-dev5/vulnex.git
 cd vulnex
 
 make install            # creates backend/.venv and installs runtime + dev deps
-make test               # 55 tests
+make test               # 66 tests
 make serve              # http://localhost:8000  (live dashboard + Scan Now)
 ```
 
@@ -348,7 +351,6 @@ vulnex vuln-data  Show the NVD inventory published by VulnerabilityData
 vulnex stats    Print dashboard totals as JSON
 vulnex serve    Serve the JSON API + dashboard (--host, --port, --db)
 vulnex export   Write the static GitHub Pages dashboard + JSON snapshot (--out)
-vulnex hash-password  Print a PBKDF2 hash to put in VULNEX_ADMIN_PASSWORD_HASH
 ```
 
 ---
@@ -369,7 +371,6 @@ vulnex hash-password  Print a PBKDF2 hash to put in VULNEX_ADMIN_PASSWORD_HASH
 | `GET` | `/api/cves/{cve_id}/deep` | Deep patch analysis for one finding: affected files, source tarball, backport patches (`branch`, `spec`) |
 | `GET` | `/api/triage` | Every finding's baked triage view (status, resolution, owner, PR, patch verdict) |
 | `GET` | `/api/role` | Access tier (`viewer` / `admin` / `automation`), granted capabilities and which sign-in methods are configured |
-| `POST` | `/api/auth/login` | Admin sign-in with `email` + `password`; returns an opaque session token (`401` bad credential, `503` unconfigured) |
 | `POST` | `/api/auth/logout` | Drop the caller's session token |
 | `GET` | `/api/auth/github` | Start GitHub sign-in (302 to GitHub; `503` when no OAuth app is configured) |
 | `GET` | `/api/auth/github/callback` | Finish GitHub sign-in for the allow-listed account and redirect back with `#vulnex_token=…` |
@@ -429,8 +430,8 @@ it; a narrowly-scoped machine identity feeds the GitHub PR reference back in.
 
 | | **Viewer** — anyone with the link | **Admin** — the security lead | **Automation** — the machine identity |
 | --- | --- | --- | --- |
-| How it runs | the static export (`site/`, GitHub Pages) or any live server, until someone signs in | `vulnex serve` + `VULNEX_ADMIN_EMAIL` / `VULNEX_ADMIN_PASSWORD_HASH` (or a GitHub OAuth app) | `vulnex serve` + `VULNEX_AUTOMATION_KEY` |
-| How they get in | they do not — no credential, no sign-in | email + password, or GitHub for the allow-listed account; the server returns a session token | presents its static key; no sign-in flow |
+| How it runs | the static export (`site/`, GitHub Pages) or any live server, until someone signs in | `vulnex serve` + a GitHub OAuth App (`GITHUB_OAUTH_CLIENT_ID` / `GITHUB_OAUTH_CLIENT_SECRET`) | `vulnex serve` + `VULNEX_AUTOMATION_KEY` |
+| How they get in | they do not — no credential, no sign-in | **GitHub only**, for the allow-listed account; the server returns a session token | presents its static key; no sign-in flow |
 | Can read | every open exposure, patch note, confidence score and triage trail | same | same |
 | Can write | nothing — the hosted copy is a static snapshot with no backend | dispute, comment, patch verdict, GitHub PR, queue and scan control | the GitHub CVE PR **only** |
 | Enforcement | `staticApi()` refuses every non-GET; no server exists to write to | every admin endpoint answers `401` without a live session token | every endpoint except `POST /api/triage/github-pr` answers `401` |
@@ -443,25 +444,22 @@ it; a narrowly-scoped machine identity feeds the GitHub PR reference back in.
    is baked with `role: "viewer"`, the header shows *Read-only view* and the assign /
    comment / scan controls are not rendered at all.
 2. **Live server.** `make serve` gives the full interactive app on `:8000`. Configure the
-   admin credential (and the machine key for the automation tier) before exposing it:
+   GitHub OAuth App (and the machine key for the automation tier) before exposing it:
 
    ```bash
-   export VULNEX_ADMIN_EMAIL='you@example.com'
-   export VULNEX_ADMIN_PASSWORD_HASH="$(python -m vulnex.cli hash-password)"
+   export GITHUB_OAUTH_CLIENT_ID='your-client-id'
+   export GITHUB_OAUTH_CLIENT_SECRET='your-client-secret'
    export VULNEX_AUTOMATION_KEY='a-scoped-machine-secret'
    python -m vulnex.cli serve --host 0.0.0.0 --port 8000
    ```
 
-   Password sign-in is **unavailable until you configure it**: `/api/auth/login` answers
-   `503` and the dialog disables the form. In the UI, click **Login as admin** in the
-   header and enter the email + password; the admin identity chip appears, and the
-   session token is kept in `localStorage` and sent as `X-VULNEX-Key` on every request
-   (the password itself is never stored in the browser). **Sign out** revokes the token.
-   Prefer GitHub? Create a GitHub OAuth App whose callback is
-   `<deployment>/api/auth/github/callback`, set `GITHUB_OAUTH_CLIENT_ID` /
-   `GITHUB_OAUTH_CLIENT_SECRET`, and the *Continue with GitHub* button appears. Only the
-   account in `VULNEX_ADMIN_GITHUB` (default `akhila-dev5`) may sign in that way; any
-   other GitHub account is refused with `403` before a session is minted.
+   Create a GitHub OAuth App whose callback is `<deployment>/api/auth/github/callback`.
+   In the UI, click **Login as admin** in the header and choose **Continue with GitHub**;
+   the admin identity chip appears, and the session token is kept in `localStorage` and
+   sent as `X-VULNEX-Key` on every request. **Sign out** revokes the token. Only the
+   account in `VULNEX_ADMIN_GITHUB` (default `akhila-dev5`) may sign in; any other GitHub
+   account is refused with `403` before a session is minted. GitHub is the **only** admin
+   method — there is no password login and no `/api/auth/login` route.
 3. **Share link button.** The `Share link` button in the header copies the current view
    (including its hash route) so you can hand someone the exact CVE or package you are
    talking about.
@@ -470,20 +468,18 @@ Every credential is deployment-owned and read from the environment:
 
 | Variable | Default | Tier / use |
 | --- | --- | --- |
-| `VULNEX_ADMIN_EMAIL` | *(empty — password sign-in disabled)* | admin sign-in identifier |
-| `VULNEX_ADMIN_PASSWORD_HASH` | *(empty)* | admin password as a PBKDF2 hash (`vulnex hash-password`) |
-| `VULNEX_ADMIN_PASSWORD` | *(empty)* | plaintext alternative for local development only |
 | `VULNEX_ADMIN_GITHUB` | `akhila-dev5` | the only GitHub account allowed to sign in as admin |
-| `GITHUB_OAUTH_CLIENT_ID` / `GITHUB_OAUTH_CLIENT_SECRET` | *(empty — GitHub sign-in hidden)* | GitHub OAuth App |
+| `GITHUB_OAUTH_CLIENT_ID` / `GITHUB_OAUTH_CLIENT_SECRET` | *(empty — GitHub sign-in hidden)* | GitHub OAuth App (the only admin method) |
 | `VULNEX_GITHUB_REDIRECT` | derived from the request | explicit callback URL behind a proxy |
+| `VULNEX_ADMIN_EMAIL` | *(empty)* | display/owner email stored on triage records |
 | `VULNEX_SESSION_TTL` | `43200` (12 h) | session lifetime in seconds |
 | `VULNEX_AUTOMATION_KEY` | `vulnex-sec` | automation — only `POST /api/triage/github-pr` |
 | `VULNEX_ADMIN_IDENTITY` | `akhila-dev5` | admin identity shown in the UI and stored on triage records |
 | `VULNEX_AUTOMATION_IDENTITY` / `VULNEX_AUTOMATION_EMAIL` | `vulnex-sec` / `vulnexsecurityautomation@gmail.com` | automation identity |
 
-There is no shared access key for people any more: a human credential is a session
-minted by `/api/auth/login`, and it expires. Only the automation machine identity still
-presents a long-lived static key.
+There is no shared access key and no password for people any more: a human credential
+is a session minted by the GitHub callback, and it expires. Only the automation machine
+identity still presents a long-lived static key.
 
 ---
 
@@ -505,6 +501,33 @@ The Pages build runs the same SPA with `window.VULNEX_STATIC` set, so it answers
 API call from a pre-baked JSON snapshot in `site/api/` — filtering, sorting and
 pagination all happen in the browser, with no backend at all. Optional `NVD_API_KEY`
 secret raises NVD rate limits; everything else works with the default `GITHUB_TOKEN`.
+
+### Deploying the live console
+
+GitHub Pages hosts the read-only snapshot. The **interactive** console (triage,
+dispute, patch verdicts, Scan Now) needs a long-running Python process, so it is
+deployed as a small free web service. The repo ships a
+[`render.yaml`](render.yaml) Blueprint for [Render](https://render.com):
+
+1. Create a GitHub OAuth App with the callback
+   `https://<your-service>.onrender.com/api/auth/github/callback`.
+2. Render dashboard → **New → Blueprint** → pick this repo. Render reads
+   `render.yaml`, creates the `free` web service and prompts for the two OAuth
+   secrets.
+3. The service builds `pip install -r requirements.txt` under `backend/` and runs
+   `uvicorn vulnex.api:app --host 0.0.0.0 --port $PORT`; Render's `$PORT` and the
+   `/api/health` health check are wired in.
+
+The console is then live at `https://<your-service>.onrender.com` — a real HTTPS
+subdomain, deployed from GitHub. Nothing about that link is localhost.
+
+> **Free-tier caveat.** Render's free web service sleeps after ~15 minutes without
+> traffic and wakes on the next request (about a minute of cold start); it has no
+> persistent disk. That is fine here: the SQLite file is a committed, read-only
+> snapshot and scans run in GitHub Actions rather than on the host. Sign-in
+> sessions live in memory, so a wake-up or redeploy simply means signing in again.
+> Cloud Run is a reasonable alternative if you prefer a monthly free request
+> allowance over an always-free service; either way the app needs no code change.
 
 ---
 
@@ -529,7 +552,7 @@ items, and **PRs are only ever opened against the configured target repository**
 ## Tests
 
 ```bash
-cd backend && python -m pytest -q     # 55 passed
+cd backend && python -m pytest -q     # 66 passed
 ```
 
 | File | Covers |
@@ -539,7 +562,8 @@ cd backend && python -m pytest -q     # 55 passed
 | `tests/test_verification.py` | status precedence, backport overriding OSV, corroboration, Azure Linux `last_affected` semantics |
 | `tests/test_api.py` | API surface, snapshot identity across duplicate package names, assignment flow, triage endpoints, static frontend serving |
 | `tests/test_export.py` | static Pages export: static flag injection, rehydrated references, baked triage views, finding counts, scan history |
-| `tests/test_access.py` | access tiers: viewers get 401 on every write, the automation key can only set the GitHub PR, email/password sign-in mints a revocable session, the GitHub callback refuses a forged state and a non-allow-listed account |
+| `tests/test_access.py` | access tiers: viewers get 401 on every write, the automation key can only set the GitHub PR, the password route is gone, the GitHub callback refuses a forged state and a non-allow-listed account |
+| `tests/test_vulnerabilitydata.py` | the pre-computed VulnerabilityData feed client and its API routes |
 
 The suite runs against fixtures and never touches the network.
 
@@ -561,10 +585,10 @@ vulnex/
 │   │   ├── scanner.py        the 7-stage scan pipeline
 │   │   ├── db.py             SQLite schema and queries
 │   │   ├── export.py         static GitHub Pages export
-│   │   ├── auth.py           password hashing, admin sessions, GitHub OAuth
+│   │   ├── auth.py           admin sessions and GitHub OAuth (no password login)
 │   │   ├── api.py            FastAPI app + Scan Now manager
 │   │   └── cli.py            `vulnex` command line
-│   ├── tests/                55 pytest tests
+│   ├── tests/                66 pytest tests
 │   ├── requirements.txt      runtime deps (fastapi, uvicorn, requests, pydantic)
 │   └── requirements-dev.txt  + pytest, httpx
 ├── frontend/                 build-free SPA (index.html, styles.css, app.js)
@@ -572,6 +596,7 @@ vulnex/
 ├── docs/screenshots/         dashboard screenshots
 ├── scripts/screenshots.py    reproducible screenshot capture
 ├── .github/workflows/scan.yml  scheduled scan + Pages deploy
+├── render.yaml               live-console Blueprint (Render free web service)
 └── Makefile
 ```
 
