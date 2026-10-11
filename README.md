@@ -28,7 +28,6 @@ Python 3.10+ · FastAPI · SQLite · build-free vanilla JS · GitHub Actions · 
 - [Architecture](#architecture)
 - [Detection and verification methodology](#detection-and-verification-methodology)
 - [Data sources](#data-sources)
-- [Vulnerability data repository](#vulnerability-data-repository)
 - [Real scan results](#real-scan-results)
 - [Quickstart](#quickstart)
 - [CLI reference](#cli-reference)
@@ -245,61 +244,15 @@ Two real examples from the current snapshot:
 | Source | Used for | Cost |
 | --- | --- | --- |
 | **OSV.dev — `Azure Linux:3`** | Primary detection: official Azure Linux advisories with RPM `fixed`/`last_affected` events | free |
-| **VulnerabilityData** (`akhila-dev5/VulnerabilityData`) | Corroborating per-package CVE inventory pre-computed from the NVD JSON 2.0 feeds; read as JSON + OVAL over raw.githubusercontent.com | free |
 | **OSV.dev — Red Hat / Debian / Ubuntu / Alpine** | Cross-distribution corroboration of CVE ids | free |
 | **NVD** | CVSS severity, CWE, references | free (optional `NVD_API_KEY` raises limits) |
 | **MITRE CVE (cveawg)** | Authoritative CVE identity and description | free |
 | **Red Hat Security Data API** | Severity, fixed versions, `package_state` | free |
 | **GitHub Security Advisories** | Corroboration and upstream-fix discovery | free |
 | **GitHub tree/raw API** | Spec + patch collection | free (uses `GITHUB_TOKEN` in CI) |
+| **VulnerabilityData repo** | Pre-computed NVD inventory of every `cgmanifest.json` package version (OVAL + JSON, refreshed several times a day) | free |
 
 No OpenAI/Anthropic/AWS/Azure billing is involved anywhere.
-
----
-
-## Vulnerability data repository
-
-The NVD scan does not run inside VULNEX. It runs in a **separate, scheduled
-repository** — [`akhila-dev5/VulnerabilityData`](https://github.com/akhila-dev5/VulnerabilityData) —
-which is the producer half of the pipeline:
-
-1. **Manifest** — `azurelinux-test` publishes a `cgmanifest.json` listing every
-   registered component (name, version, source tarball).
-2. **Scan** — `VulnerabilityData/scripts/scan.py` matches each name/version
-   against the NVD JSON 2.0 feeds (streamed with `ijson`, cached), keeping only
-   ranges that actually contain the registered version.
-3. **Publish** — a scheduled workflow (every few hours) commits
-   `data/azurelinux-test.json` (machine-readable per-package inventory) and
-   `oval/azurelinux-test.xml` (OVAL 5.11.1 definitions).
-
-VULNEX is the **consumer**: it reads the committed JSON directly over
-`raw.githubusercontent.com`, with no database sync and no API key. This keeps the
-multi-hundred-MB NVD scan out of the VULNEX pipeline while still surfacing what
-NVD's CPE data says about the exact registered versions, as a corroborating
-inventory alongside OSV.
-
-```
-VulnerabilityData (scheduled, own repo)          VULNEX (this repo)
-  cgmanifest.json ─▶ NVD scan ─▶ data/*.json  ──▶  /api/vulnerability-data
-                              └▶ oval/*.xml        vulnex vuln-data
-```
-
-| Method | Path | Description |
-| --- | --- | --- |
-| `GET` | `/api/vulnerability-data` | Feed summary (generator metadata, scan stats, OVAL URL) |
-| `GET` | `/api/vulnerability-data/packages` | Paged package inventory (`search`, `page`, `limit`) |
-| `GET` | `/api/vulnerability-data/packages/{name}` | One package's CVEs and vulnerable ranges |
-
-```bash
-vulnex vuln-data                   # feed summary
-vulnex vuln-data --package curl    # one package's CVE inventory
-```
-
-The feed location is configurable and cached on disk, so a transient upstream
-failure serves the last known feed: `VULNEX_VULNERABILITYDATA_REPO`,
-`VULNEX_VULNERABILITYDATA_BRANCH`, `VULNEX_VULNERABILITYDATA_DISTRO`, and the
-explicit `VULNEX_VULNERABILITYDATA_JSON` / `VULNEX_VULNERABILITYDATA_OVAL`
-overrides.
 
 ---
 
@@ -341,7 +294,7 @@ git clone https://github.com/akhila-dev5/vulnex.git
 cd vulnex
 
 make install            # creates backend/.venv and installs runtime + dev deps
-make test               # 60 tests
+make test               # 66 tests
 make serve              # http://localhost:8000  (live dashboard + Scan Now)
 ```
 
@@ -391,14 +344,13 @@ vulnex scan     Run a scan and replace the SQLite snapshot
   --no-corroborate                     skip cross-distro corroboration
   --no-enrich                          skip NVD/MITRE/Red Hat/GHSA enrichment
 
+vulnex vuln-data  Show the NVD inventory published by VulnerabilityData
+  --package curl                   print one package's CVE inventory
+  --refresh                        re-fetch the feed instead of using the cache
+
 vulnex stats    Print dashboard totals as JSON
 vulnex serve    Serve the JSON API + dashboard (--host, --port, --db)
 vulnex export   Write the static GitHub Pages dashboard + JSON snapshot (--out)
-vulnex vuln-data  Read the pre-computed VulnerabilityData feed
-  --package curl                       one package's CVE inventory
-  --search text                        filter packages by name substring
-  --limit N                            max packages to list (default 25)
-  --refresh                            bypass the on-disk feed cache
 ```
 
 ---
@@ -412,6 +364,9 @@ vulnex vuln-data  Read the pre-computed VulnerabilityData feed
 | `GET` | `/api/packages` | Paged package list (`search`, `branch`, `page`, `limit`) |
 | `GET` | `/api/packages/{name}` | Package detail incl. patches, findings and spec variants (`branch`, `spec`) |
 | `GET` | `/api/findings` | Paged **open exposures** (`severity`, `search`, `package`, `branch`) — CVEs already fixed are never returned |
+| `GET` | `/api/vulnerability-data` | Summary of the pre-computed NVD inventory published by the VulnerabilityData repo (`?refresh=true` re-fetches) |
+| `GET` | `/api/vulnerability-data/packages` | Paged package inventory from that feed (`search`, `page`, `limit`) |
+| `GET` | `/api/vulnerability-data/packages/{name}` | One package's CVE list, versions and vulnerable ranges (`404` when unknown) |
 | `GET` | `/api/cves/{cve_id}` | All findings for a CVE + live enrichment (`?enrich=false` to skip) |
 | `GET` | `/api/cves/{cve_id}/deep` | Deep patch analysis for one finding: affected files, source tarball, backport patches (`branch`, `spec`) |
 | `GET` | `/api/triage` | Every finding's baked triage view (status, resolution, owner, PR, patch verdict) |
@@ -430,9 +385,6 @@ vulnex vuln-data  Read the pre-computed VulnerabilityData feed
 | `POST` | `/api/scan` | Admin only — start a scan in the background (`202`, `409` if busy, `401` otherwise) |
 | `GET` | `/api/scan/status` | Live scan progress log + last scan |
 | `GET` | `/api/scans` | Scan history |
-| `GET` | `/api/vulnerability-data` | Feed summary: generator metadata, scan statistics and the OVAL URL (`refresh=true` bypasses the cache) |
-| `GET` | `/api/vulnerability-data/packages` | Paged package CVE inventory from the feed (`search`, `page`, `limit`) |
-| `GET` | `/api/vulnerability-data/packages/{name}` | One package's CVEs and vulnerable ranges from the feed |
 
 Interactive docs are at `http://localhost:8000/docs` when `vulnex serve` is running.
 
@@ -520,8 +472,6 @@ Every credential is deployment-owned and read from the environment:
 | `GITHUB_OAUTH_CLIENT_ID` / `GITHUB_OAUTH_CLIENT_SECRET` | *(empty — GitHub sign-in hidden)* | GitHub OAuth App (the only admin method) |
 | `VULNEX_GITHUB_REDIRECT` | derived from the request | explicit callback URL behind a proxy |
 | `VULNEX_ADMIN_EMAIL` | *(empty)* | display/owner email stored on triage records |
-| `VULNEX_VULNERABILITYDATA_REPO` / `_BRANCH` / `_DISTRO` | `akhila-dev5/VulnerabilityData` / `main` / `azurelinux-test` | pre-computed feed location |
-| `VULNEX_VULNERABILITYDATA_JSON` / `_OVAL` | *(derived from the above)* | explicit feed / OVAL URLs |
 | `VULNEX_SESSION_TTL` | `43200` (12 h) | session lifetime in seconds |
 | `VULNEX_AUTOMATION_KEY` | `vulnex-sec` | automation — only `POST /api/triage/github-pr` |
 | `VULNEX_ADMIN_IDENTITY` | `akhila-dev5` | admin identity shown in the UI and stored on triage records |
@@ -602,7 +552,7 @@ items, and **PRs are only ever opened against the configured target repository**
 ## Tests
 
 ```bash
-cd backend && python -m pytest -q     # 60 passed
+cd backend && python -m pytest -q     # 66 passed
 ```
 
 | File | Covers |
@@ -613,7 +563,7 @@ cd backend && python -m pytest -q     # 60 passed
 | `tests/test_api.py` | API surface, snapshot identity across duplicate package names, assignment flow, triage endpoints, static frontend serving |
 | `tests/test_export.py` | static Pages export: static flag injection, rehydrated references, baked triage views, finding counts, scan history |
 | `tests/test_access.py` | access tiers: viewers get 401 on every write, the automation key can only set the GitHub PR, the password route is gone, the GitHub callback refuses a forged state and a non-allow-listed account |
-| `tests/test_vulnerabilitydata.py` | the pre-computed feed client and its API routes (parsing, case-insensitive lookup, paging, missing package, offline stub) |
+| `tests/test_vulnerabilitydata.py` | the pre-computed VulnerabilityData feed client and its API routes |
 
 The suite runs against fixtures and never touches the network.
 
@@ -638,7 +588,7 @@ vulnex/
 │   │   ├── auth.py           admin sessions and GitHub OAuth (no password login)
 │   │   ├── api.py            FastAPI app + Scan Now manager
 │   │   └── cli.py            `vulnex` command line
-│   ├── tests/                60 pytest tests
+│   ├── tests/                66 pytest tests
 │   ├── requirements.txt      runtime deps (fastapi, uvicorn, requests, pydantic)
 │   └── requirements-dev.txt  + pytest, httpx
 ├── frontend/                 build-free SPA (index.html, styles.css, app.js)

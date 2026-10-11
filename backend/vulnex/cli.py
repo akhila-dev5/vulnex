@@ -5,7 +5,6 @@ Examples::
     python -m vulnex.cli scan --branches 3.0-dev,fasttrack/3.0
     python -m vulnex.cli scan --packages curl,openssl,sqlite --no-blobs
     python -m vulnex.cli stats
-    python -m vulnex.cli vuln-data --package curl
     python -m vulnex.cli serve --port 8000
 """
 
@@ -74,41 +73,6 @@ def _cmd_export(args: argparse.Namespace) -> int:
     return 0
 
 
-def _cmd_vuln_data(args: argparse.Namespace) -> int:
-    """Read the pre-computed inventory published by VulnerabilityData."""
-    from .sources.vulnerabilitydata import FeedError, VulnerabilityDataSource
-
-    source = VulnerabilityDataSource()
-    try:
-        if args.package:
-            package = source.package(args.package, refresh=args.refresh)
-            if not package:
-                print(
-                    f"[vulnex] package not found in the feed: {args.package}",
-                    file=sys.stderr,
-                )
-                return 1
-            print(json.dumps(package, indent=2, default=str))
-            return 0
-
-        summary = source.summary(refresh=args.refresh)
-        packages = source.packages(refresh=args.refresh)
-        needle = args.search.strip().lower()
-        if needle:
-            packages = [
-                pkg for pkg in packages
-                if needle in (pkg.get("name") or "").lower()
-            ]
-        summary["packages_matching"] = len(packages)
-        if args.limit:
-            summary["packages"] = packages[: args.limit]
-        print(json.dumps(summary, indent=2, default=str))
-        return 0
-    except FeedError as exc:
-        print(f"[vulnex] vulnerability data unavailable: {exc}", file=sys.stderr)
-        return 1
-
-
 def _cmd_serve(args: argparse.Namespace) -> int:
     import uvicorn
 
@@ -120,6 +84,29 @@ def _cmd_serve(args: argparse.Namespace) -> int:
         port=args.port,
         reload=False,
     )
+    return 0
+
+
+def _cmd_vuln_data(args: argparse.Namespace) -> int:
+    """Show the pre-computed NVD inventory published by VulnerabilityData."""
+    from .sources.vulnerabilitydata import FeedError, VulnerabilityDataSource
+
+    source = VulnerabilityDataSource()
+    try:
+        if args.package:
+            pkg = source.package(args.package, refresh=args.refresh)
+            if pkg is None:
+                print(
+                    f"[vulnex] package not in the VulnerabilityData feed: {args.package}",
+                    file=sys.stderr,
+                )
+                return 1
+            print(json.dumps(pkg, indent=2))
+        else:
+            print(json.dumps(source.summary(refresh=args.refresh), indent=2))
+    except FeedError as exc:
+        print(f"[vulnex] {exc}", file=sys.stderr)
+        return 1
     return 0
 
 
@@ -164,15 +151,17 @@ def build_parser() -> argparse.ArgumentParser:
 
     vuln_data = sub.add_parser(
         "vuln-data",
-        help="Read the pre-computed VulnerabilityData feed (JSON + OVAL)",
-    )
-    vuln_data.add_argument("--package", default="", help="Show one package's CVE inventory")
-    vuln_data.add_argument("--search", default="", help="Filter packages by name substring")
-    vuln_data.add_argument(
-        "--limit", type=int, default=25, help="Max packages to list (0 = none)"
+        help="Show the NVD inventory published by the VulnerabilityData repo",
     )
     vuln_data.add_argument(
-        "--refresh", action="store_true", help="Bypass the on-disk feed cache"
+        "--package",
+        default="",
+        help="Print one package's CVE inventory instead of the feed summary",
+    )
+    vuln_data.add_argument(
+        "--refresh",
+        action="store_true",
+        help="Re-fetch the feed instead of using the on-disk cache",
     )
     vuln_data.set_defaults(func=_cmd_vuln_data)
 

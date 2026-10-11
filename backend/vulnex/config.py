@@ -43,41 +43,6 @@ CORROBORATION_ECOSYSTEMS = [
     if e.strip()
 ]
 
-# VulnerabilityData repository ---------------------------------------------
-# A separate, scheduled repository (akhila-dev5/VulnerabilityData) scans the
-# azurelinux-test ``cgmanifest.json`` against the NVD JSON 2.0 feeds and
-# publishes a pre-computed per-package CVE inventory under ``data/`` (JSON) and
-# ``oval/`` (OVAL 5.11.1). VULNEX reads that feed directly over
-# raw.githubusercontent.com — no database sync, no API key — as a corroborating
-# inventory alongside the OSV/advisory pipeline.
-VULNERABILITYDATA_REPO = os.environ.get(
-    "VULNEX_VULNERABILITYDATA_REPO", "akhila-dev5/VulnerabilityData"
-).strip()
-VULNERABILITYDATA_BRANCH = os.environ.get(
-    "VULNEX_VULNERABILITYDATA_BRANCH", "main"
-).strip()
-VULNERABILITYDATA_DISTRO = os.environ.get(
-    "VULNEX_VULNERABILITYDATA_DISTRO", "azurelinux-test"
-).strip()
-VULNERABILITYDATA_JSON_URL = os.environ.get(
-    "VULNEX_VULNERABILITYDATA_JSON", ""
-).strip() or (
-    "https://raw.githubusercontent.com/{repo}/{branch}/data/{distro}.json".format(
-        repo=VULNERABILITYDATA_REPO,
-        branch=VULNERABILITYDATA_BRANCH,
-        distro=VULNERABILITYDATA_DISTRO,
-    )
-)
-VULNERABILITYDATA_OVAL_URL = os.environ.get(
-    "VULNEX_VULNERABILITYDATA_OVAL", ""
-).strip() or (
-    "https://raw.githubusercontent.com/{repo}/{branch}/oval/{distro}.xml".format(
-        repo=VULNERABILITYDATA_REPO,
-        branch=VULNERABILITYDATA_BRANCH,
-        distro=VULNERABILITYDATA_DISTRO,
-    )
-)
-
 # The AI patch-remediation workflow will only ever target this repository.
 PATCH_TARGET_REPO = os.environ.get("VULNEX_PATCH_TARGET_REPO", "akhila-dev5/azurelinux-test")
 
@@ -179,6 +144,26 @@ MITRE_CVE_API = "https://cveawg.mitre.org/api/cve"
 # Azure Linux binary/source blob store used to host release tarballs.
 BLOB_STORE_BASE = "https://azurelinuxsrcstorage.blob.core.windows.net/sources/core"
 
+# Pre-computed vulnerability data (VulnerabilityData repository) ------------
+# The VulnerabilityData repository scans the azurelinux-test cgmanifest.json
+# against the NVD JSON 2.0 feeds and publishes an OVAL document plus a
+# machine-readable per-package CVE inventory several times a day. VULNEX reads
+# that feed instead of re-running the NVD scan itself.
+VULNERABILITYDATA_REPO = os.environ.get(
+    "VULNEX_VULNERABILITYDATA_REPO", "akhila-dev5/VulnerabilityData"
+)
+VULNERABILITYDATA_BRANCH = os.environ.get("VULNEX_VULNERABILITYDATA_BRANCH", "main")
+VULNERABILITYDATA_JSON_URL = os.environ.get(
+    "VULNEX_VULNERABILITYDATA_JSON",
+    f"{GITHUB_RAW}/{VULNERABILITYDATA_REPO}/{VULNERABILITYDATA_BRANCH}"
+    "/data/azurelinux-test.json",
+)
+VULNERABILITYDATA_OVAL_URL = os.environ.get(
+    "VULNEX_VULNERABILITYDATA_OVAL",
+    f"{GITHUB_RAW}/{VULNERABILITYDATA_REPO}/{VULNERABILITYDATA_BRANCH}"
+    "/oval/azurelinux-test.xml",
+)
+
 # HTTP / scan tuning -------------------------------------------------------
 HTTP_TIMEOUT = int(os.environ.get("VULNEX_HTTP_TIMEOUT", "30"))
 SCAN_CONCURRENCY = int(os.environ.get("VULNEX_SCAN_CONCURRENCY", "16"))
@@ -232,17 +217,8 @@ def repository_metadata() -> dict:
         "branches": list(DEFAULT_BRANCHES),
         "ecosystem": OSV_ECOSYSTEM,
         "patch_target_repo": PATCH_TARGET_REPO,
-    }
-
-
-def vulnerabilitydata_metadata() -> dict:
-    """Where the pre-computed VulnerabilityData feed is read from."""
-    return {
-        "repo": VULNERABILITYDATA_REPO,
-        "branch": VULNERABILITYDATA_BRANCH,
-        "distro": VULNERABILITYDATA_DISTRO,
-        "json_url": VULNERABILITYDATA_JSON_URL,
-        "oval_url": VULNERABILITYDATA_OVAL_URL,
+        "vulnerability_data": VULNERABILITYDATA_JSON_URL,
+        "vulnerability_data_oval": VULNERABILITYDATA_OVAL_URL,
     }
 
 
