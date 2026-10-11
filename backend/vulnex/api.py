@@ -21,6 +21,7 @@ from pydantic import BaseModel
 from . import __version__, auth, config, db, triage
 from .enrichment import enrich_cve
 from .scanner import ScanOptions, run_scan
+from .sources.vulnerabilitydata import FeedError, VulnerabilityDataSource
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
@@ -131,8 +132,8 @@ manager = ScanManager()
 #   viewer      anonymous: reads everything, writes nothing
 #   admin       full triage (patch verdicts, disputes, comments, PR reference,
 #               queueing work, starting scans). The credential is an opaque
-#               session token minted by ``/api/auth/login`` from an email +
-#               password, or by the GitHub callback — never a shared static key.
+#               session token minted by the GitHub callback — never a shared
+#               static key and never a password.
 #   automation  the machine key that may ONLY set the GitHub CVE PR
 ROLE_VIEWER = config.ROLE_VIEWER
 ROLE_ADMIN = config.ROLE_ADMIN
@@ -186,7 +187,7 @@ def require_admin(request: Request) -> str:
         raise HTTPException(
             status_code=401,
             detail="Read-only access: this action needs an admin sign-in. "
-                   "Sign in with your email and password and retry.",
+                   "Sign in with GitHub and retry.",
         )
     return role
 
@@ -271,7 +272,6 @@ def get_role(request: Request) -> dict:
         "role": role,
         "identity": config.identity_for(role),
         "methods": {
-            "password": config.password_login_configured(),
             "github": config.github_login_configured(),
             "github_login": config.ADMIN_GITHUB,
         },
@@ -281,38 +281,9 @@ def get_role(request: Request) -> dict:
 
 
 # -- authentication ---------------------------------------------------------
-class LoginRequest(BaseModel):
-    email: str = ""
-    password: str = ""
-
-
 def _callback_url(request: Request) -> str:
     """The GitHub OAuth redirect URI (override it behind a reverse proxy)."""
     return config.GITHUB_OAUTH_REDIRECT or str(request.url_for("auth_github_callback"))
-
-
-@app.post("/api/auth/login")
-def auth_login(payload: LoginRequest) -> dict:
-    """Sign in as admin with email + password and mint a session token."""
-    if not config.password_login_configured():
-        raise HTTPException(
-            status_code=503,
-            detail="Password sign-in is not configured on this server. Set "
-                   "VULNEX_ADMIN_EMAIL and VULNEX_ADMIN_PASSWORD_HASH.",
-        )
-    if not auth.password_login(payload.email, payload.password):
-        raise HTTPException(status_code=401, detail="Email or password is incorrect.")
-    token, session = auth.sessions.create(
-        config.identity_for(ROLE_ADMIN), method="password"
-    )
-    return {
-        "token": token,
-        "role": ROLE_ADMIN,
-        "identity": session["identity"],
-        "method": "password",
-        "expires_at": session["expires_at"],
-        **capabilities(ROLE_ADMIN),
-    }
 
 
 @app.post("/api/auth/logout")
@@ -365,6 +336,7 @@ def get_stats() -> dict:
         data = db.stats(conn)
     data["repository"] = config.repository_metadata()
     data["roles"] = config.roles_metadata()
+    data["vulnerability_data"] = config.vulnerabilitydata_metadata()
     return data
 
 
@@ -617,6 +589,63 @@ def set_patch_verdict(payload: PatchVerdictRequest, request: Request) -> dict:
             available_since=payload.available_since.strip(),
         )
     return {"triage": record}
+
+
+# -- vulnerability data (pre-computed feed) ---------------------------------
+def _vuln_data() -> VulnerabilityDataSource:
+    """A cached read-only client for the VulnerabilityData repository feed."""
+    return VulnerabilityDataSource()
+
+
+@app.get("/api/vulnerability-data")
+def get_vulnerability_data(refresh: bool = False) -> dict:
+    """Feed summary: generator metadata, scan statistics and the OVAL URL."""
+    try:
+        summary = _vuln_data().summary(refresh=refresh)
+    except FeedError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+    summary["repository"] = config.vulnerabilitydata_metadata()
+    return summary
+
+
+@app.get("/api/vulnerability-data/packages")
+def get_vulnerability_data_packages(
+    search: str = "",
+    page: int = 1,
+    limit: int = Query(50, ge=1, le=500),
+) -> dict:
+    """Paged per-package CVE inventory from the pre-computed feed."""
+    try:
+        packages = _vuln_data().packages()
+    except FeedError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+    needle = search.strip().lower()
+    if needle:
+        packages = [
+            pkg for pkg in packages if needle in (pkg.get("name") or "").lower()
+        ]
+    total = len(packages)
+    start = (page - 1) * limit
+    return {
+        "items": packages[start : start + limit],
+        "total": total,
+        "page": page,
+        "limit": limit,
+    }
+
+
+@app.get("/api/vulnerability-data/packages/{name}")
+def get_vulnerability_data_package(name: str) -> dict:
+    """One package's CVE inventory and vulnerable ranges from the feed."""
+    try:
+        pkg = _vuln_data().package(name)
+    except FeedError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+    if not pkg:
+        raise HTTPException(
+            status_code=404, detail="Package not found in the VulnerabilityData feed"
+        )
+    return pkg
 
 
 # -- assignment queue -------------------------------------------------------

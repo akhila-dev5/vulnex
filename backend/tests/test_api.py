@@ -6,10 +6,8 @@ from fastapi.testclient import TestClient
 from vulnex import auth, config, db
 from vulnex.api import app
 
-# Writes need an admin sign-in now that the tool is read-only by default.
-ADMIN_EMAIL = "lead@example.com"
-ADMIN_PASSWORD = "correct horse battery staple"
-ADMIN_PASSWORD_HASH = auth.hash_password(ADMIN_PASSWORD)
+# Writes need an admin sign-in now that the tool is read-only by default. The
+# only human credential is a GitHub session; tests mint one directly.
 
 
 def _finding(**over):
@@ -106,20 +104,14 @@ def _clean_sessions():
 
 @pytest.fixture()
 def admin(client):
-    """Signed-in admin headers from the email + password endpoint."""
-    resp = client.post(
-        "/api/auth/login", json={"email": ADMIN_EMAIL, "password": ADMIN_PASSWORD}
-    )
-    assert resp.status_code == 200, resp.text
-    return {"X-VULNEX-Key": resp.json()["token"]}
+    """Signed-in admin headers — a real session token, as GitHub sign-in mints."""
+    token, _ = auth.sessions.create(config.identity_for("admin"), method="github")
+    return {"X-VULNEX-Key": token}
 
 
 @pytest.fixture()
 def client(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "DB_PATH", tmp_path / "vulnex.db")
-    monkeypatch.setattr(config, "ADMIN_EMAIL", ADMIN_EMAIL)
-    monkeypatch.setattr(config, "ADMIN_PASSWORD_HASH", ADMIN_PASSWORD_HASH)
-    monkeypatch.setattr(config, "ADMIN_PASSWORD", "")
     conn = db.connect()
     db.init_db(conn)
     scan_id = db.start_scan(conn, ["3.0-dev"], "Azure Linux:3")

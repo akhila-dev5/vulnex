@@ -118,9 +118,9 @@ function patchBlobUrl(specPath, branch, filename) {
 }
 
 /* ------------------------------ access tiers -----------------------------
-   VULNEX is read-only until an admin signs in. Signing in is email + password
-   or GitHub; the server answers with an opaque session token that is kept here
-   and sent as the X-VULNEX-Key header on every request. Three roles exist:
+   VULNEX is read-only until an admin signs in. The only admin method is GitHub;
+   the server answers with an opaque session token that is kept here and sent as
+   the X-VULNEX-Key header on every request. Three roles exist:
      viewer      read everything, change nothing
      admin       triage, dispute, patch verdicts, PR reference, scans
      automation  a machine key that may ONLY set the GitHub CVE PR
@@ -210,9 +210,9 @@ async function api(path, opts = {}) {
   if (!res.ok) {
     let detail = res.statusText;
     try { detail = (await res.json()).detail || detail; } catch (_) {}
-    if (res.status === 401 && path !== "/auth/login") {
+    if (res.status === 401) {
       // A rejected write means the stored credential is no longer valid: drop to
-      // read-only. A rejected *sign-in* is an ordinary form error, not a demotion.
+      // read-only so the UI stops offering actions that would only fail again.
       applyRole({ role: "viewer", ...NO_CAPS });
     }
     throw new Error(detail || "Read-only — that action needs admin access.");
@@ -1423,51 +1423,20 @@ function showLoginError(message) {
 
 function openLoginModal() {
   const methods = (state.roleInfo && state.roleInfo.methods) || {};
-  $("#login-email").value = "";
-  $("#login-password").value = "";
   showLoginError("");
-  // Only offer the methods this server actually has configured.
-  const canPassword = methods.password !== false;
-  $("#login-submit").disabled = !canPassword;
-  $("#login-email").disabled = !canPassword;
-  $("#login-password").disabled = !canPassword;
-  $("#login-github-wrap").hidden = !methods.github;
-  $("#login-github-hint").textContent = methods.github
+  // GitHub is the only admin method. When it is not configured, say so plainly
+  // instead of showing a button that cannot work.
+  const githubOn = !!methods.github;
+  $("#login-github-wrap").hidden = !githubOn;
+  $("#login-unconfigured").hidden = githubOn;
+  $("#login-github-hint").textContent = githubOn
     ? `Only @${methods.github_login} may sign in this way.`
     : "";
   openModal("#login-modal");
-  setTimeout(() => { if (canPassword) $("#login-email").focus(); }, 30);
 }
 
 $("#login-btn")?.addEventListener("click", openLoginModal);
 $("#login-cancel")?.addEventListener("click", () => closeModal("#login-modal"));
-$("#login-password")?.addEventListener("keydown", (e) => {
-  if (e.key === "Enter") $("#login-submit").click();
-});
-$("#login-submit")?.addEventListener("click", async () => {
-  const email = ($("#login-email").value || "").trim();
-  const password = $("#login-password").value || "";
-  showLoginError("");
-  if (!email || !password) {
-    showLoginError("Enter your admin email and password.");
-    return;
-  }
-  const btn = $("#login-submit");
-  btn.disabled = true;
-  try {
-    const info = await api("/auth/login", { method: "POST", body: { email, password } });
-    setStoredKey(info.token);
-    // Keep the advertised methods from the last /role call.
-    applyRole({ ...(state.roleInfo || {}), ...info });
-    closeModal("#login-modal");
-    toast("Signed in as admin");
-    render();
-  } catch (err) {
-    showLoginError(err.message);
-  } finally {
-    btn.disabled = false;
-  }
-});
 $("#logout-btn")?.addEventListener("click", async () => {
   try { await api("/auth/logout", { method: "POST" }); } catch (_) { /* stale token */ }
   setStoredKey("");

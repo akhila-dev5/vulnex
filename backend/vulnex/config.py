@@ -43,6 +43,41 @@ CORROBORATION_ECOSYSTEMS = [
     if e.strip()
 ]
 
+# VulnerabilityData repository ---------------------------------------------
+# A separate, scheduled repository (akhila-dev5/VulnerabilityData) scans the
+# azurelinux-test ``cgmanifest.json`` against the NVD JSON 2.0 feeds and
+# publishes a pre-computed per-package CVE inventory under ``data/`` (JSON) and
+# ``oval/`` (OVAL 5.11.1). VULNEX reads that feed directly over
+# raw.githubusercontent.com — no database sync, no API key — as a corroborating
+# inventory alongside the OSV/advisory pipeline.
+VULNERABILITYDATA_REPO = os.environ.get(
+    "VULNEX_VULNERABILITYDATA_REPO", "akhila-dev5/VulnerabilityData"
+).strip()
+VULNERABILITYDATA_BRANCH = os.environ.get(
+    "VULNEX_VULNERABILITYDATA_BRANCH", "main"
+).strip()
+VULNERABILITYDATA_DISTRO = os.environ.get(
+    "VULNEX_VULNERABILITYDATA_DISTRO", "azurelinux-test"
+).strip()
+VULNERABILITYDATA_JSON_URL = os.environ.get(
+    "VULNEX_VULNERABILITYDATA_JSON", ""
+).strip() or (
+    "https://raw.githubusercontent.com/{repo}/{branch}/data/{distro}.json".format(
+        repo=VULNERABILITYDATA_REPO,
+        branch=VULNERABILITYDATA_BRANCH,
+        distro=VULNERABILITYDATA_DISTRO,
+    )
+)
+VULNERABILITYDATA_OVAL_URL = os.environ.get(
+    "VULNEX_VULNERABILITYDATA_OVAL", ""
+).strip() or (
+    "https://raw.githubusercontent.com/{repo}/{branch}/oval/{distro}.xml".format(
+        repo=VULNERABILITYDATA_REPO,
+        branch=VULNERABILITYDATA_BRANCH,
+        distro=VULNERABILITYDATA_DISTRO,
+    )
+)
+
 # The AI patch-remediation workflow will only ever target this repository.
 PATCH_TARGET_REPO = os.environ.get("VULNEX_PATCH_TARGET_REPO", "akhila-dev5/azurelinux-test")
 
@@ -64,28 +99,23 @@ OPEN_STATUS = "affected"
 # One team tool, three tiers. The tool is read-only by default.
 #
 #   viewer      anyone with the link: reads everything, writes nothing
-#   admin       the human lead. Signs in with **email + password**, or with
-#               **GitHub** (any account whose login is on the allow-list), and
-#               receives an opaque session token. Full triage: patch verdicts,
-#               disputes, comments, GitHub PR reference, queueing and scans.
+#   admin       the human lead. Signs in with **GitHub only** — any account
+#               whose login is on the allow-list — and receives an opaque
+#               session token. Full triage: patch verdicts, disputes, comments,
+#               GitHub PR reference, queueing and scans.
 #   automation  a narrowly-scoped machine identity that presents one static key
 #               and may only set the GitHub CVE pull request (nothing else).
 #
-# There is no shared "access key" for people any more: a human credential is a
-# session minted by /api/auth/login, never a long-lived string handed around.
+# There is no shared "access key" and no password for people any more: the only
+# human credential is a session minted by the GitHub callback, and it expires.
 ROLE_VIEWER = "viewer"
 ROLE_ADMIN = "admin"
 ROLE_AUTOMATION = "automation"
 
-# Admin identity shown in the UI and stored on triage records.
+# Admin identity shown in the UI and stored on triage records. The email is a
+# display/owner value only: the admin credential is GitHub, not a password.
 ADMIN_IDENTITY = os.environ.get("VULNEX_ADMIN_IDENTITY", "akhila-dev5")
 ADMIN_EMAIL = os.environ.get("VULNEX_ADMIN_EMAIL", "").strip().lower()
-
-# The admin password. Set the PBKDF2 hash (preferred — generate it with
-# ``python -m vulnex.cli hash-password``); the plaintext form is only a
-# convenience for local development. Neither value is ever served by the API.
-ADMIN_PASSWORD_HASH = os.environ.get("VULNEX_ADMIN_PASSWORD_HASH", "").strip()
-ADMIN_PASSWORD = os.environ.get("VULNEX_ADMIN_PASSWORD", "")
 
 # GitHub authentication for the admin. Create a GitHub OAuth App with the
 # callback ``<deployment>/api/auth/github/callback`` and set the two credentials;
@@ -107,11 +137,6 @@ AUTOMATION_KEY = os.environ.get("VULNEX_AUTOMATION_KEY") or "vulnex-sec"
 
 # How long a sign-in stays valid (seconds).
 SESSION_TTL = int(os.environ.get("VULNEX_SESSION_TTL", str(12 * 3600)))
-
-
-def password_login_configured() -> bool:
-    """True when the email + password login can actually be offered."""
-    return bool(ADMIN_EMAIL and (ADMIN_PASSWORD_HASH or ADMIN_PASSWORD))
 
 
 def github_login_configured() -> bool:
@@ -207,6 +232,17 @@ def repository_metadata() -> dict:
         "branches": list(DEFAULT_BRANCHES),
         "ecosystem": OSV_ECOSYSTEM,
         "patch_target_repo": PATCH_TARGET_REPO,
+    }
+
+
+def vulnerabilitydata_metadata() -> dict:
+    """Where the pre-computed VulnerabilityData feed is read from."""
+    return {
+        "repo": VULNERABILITYDATA_REPO,
+        "branch": VULNERABILITYDATA_BRANCH,
+        "distro": VULNERABILITYDATA_DISTRO,
+        "json_url": VULNERABILITYDATA_JSON_URL,
+        "oval_url": VULNERABILITYDATA_OVAL_URL,
     }
 
 

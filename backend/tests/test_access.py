@@ -14,11 +14,8 @@ from test_api import _finding, _package
 from vulnex import auth, config, db
 from vulnex.api import app
 
-# A human admin signs in with email + password and receives a session token; the
-# machine identity keeps a static key. There is no shared "access key" for people.
-ADMIN_EMAIL = "lead@example.com"
-ADMIN_PASSWORD = "correct horse battery staple"
-ADMIN_PASSWORD_HASH = auth.hash_password(ADMIN_PASSWORD)
+# The only human credential is a GitHub sign-in; the machine identity keeps a
+# static key. There is no shared "access key" and no password for people.
 AUTOMATION_KEY = "test-automation-key"
 AUTO = {"X-VULNEX-Key": AUTOMATION_KEY}
 KEY_HEADER = "X-VULNEX-Key"
@@ -52,12 +49,9 @@ def _clean_sessions():
 
 @pytest.fixture()
 def client(tmp_path, monkeypatch):
-    """A server with password sign-in and the automation key configured."""
+    """A server with the GitHub allow-list and the automation key configured."""
     db_path = tmp_path / "vulnex.db"
     monkeypatch.setattr(config, "DB_PATH", db_path)
-    monkeypatch.setattr(config, "ADMIN_EMAIL", ADMIN_EMAIL)
-    monkeypatch.setattr(config, "ADMIN_PASSWORD_HASH", ADMIN_PASSWORD_HASH)
-    monkeypatch.setattr(config, "ADMIN_PASSWORD", "")
     monkeypatch.setattr(config, "AUTOMATION_KEY", AUTOMATION_KEY)
     _seed(db_path)
     return TestClient(app)
@@ -65,12 +59,9 @@ def client(tmp_path, monkeypatch):
 
 @pytest.fixture()
 def admin(client):
-    """Signed-in admin headers — a real session token from the login endpoint."""
-    resp = client.post(
-        "/api/auth/login", json={"email": ADMIN_EMAIL, "password": ADMIN_PASSWORD}
-    )
-    assert resp.status_code == 200, resp.text
-    return {"X-VULNEX-Key": resp.json()["token"]}
+    """Signed-in admin headers — a real session token, as GitHub sign-in mints."""
+    token, _ = auth.sessions.create(config.identity_for("admin"), method="github")
+    return {KEY_HEADER: token}
 
 
 # -- role resolution --------------------------------------------------------
@@ -88,12 +79,10 @@ def test_admin_session_unlocks_triage(client, admin):
     assert data["can_dispute"] and data["can_comment"] and data["can_set_pr"]
 
 
-def test_role_endpoint_advertises_the_sign_in_methods(client):
+def test_role_endpoint_advertises_only_github(client):
     data = client.get("/api/role").json()
     assert data["role"] == "viewer"
-    assert data["methods"] == {
-        "password": True, "github": False, "github_login": GITHUB_LOGIN,
-    }
+    assert data["methods"] == {"github": False, "github_login": GITHUB_LOGIN}
 
 
 def test_automation_key_can_only_set_the_pr(client):
@@ -105,38 +94,16 @@ def test_automation_key_can_only_set_the_pr(client):
     assert data["write_enabled"] is False
 
 
-# -- sign-in ----------------------------------------------------------------
-def test_email_password_login_mints_a_session(client):
+# -- sign-in: GitHub only ---------------------------------------------------
+def test_password_login_endpoint_is_gone(client):
+    """GitHub is the only admin method: the old password route no longer exists."""
     resp = client.post(
-        "/api/auth/login", json={"email": ADMIN_EMAIL, "password": ADMIN_PASSWORD}
+        "/api/auth/login", json={"email": "lead@example.com", "password": "x"}
     )
-    assert resp.status_code == 200
-    body = resp.json()
-    assert body["role"] == "admin" and body["method"] == "password"
-    token = body["token"]
-    # The token is an opaque session credential, never the password itself.
-    assert ADMIN_PASSWORD not in token
-    assert client.get("/api/role", headers={KEY_HEADER: token}).json()["role"] == "admin"
-
-
-def test_login_rejects_a_wrong_password_or_email(client):
-    assert client.post(
-        "/api/auth/login", json={"email": ADMIN_EMAIL, "password": "wrong"}
-    ).status_code == 401
-    assert client.post(
-        "/api/auth/login",
-        json={"email": "someone@else.example", "password": ADMIN_PASSWORD},
-    ).status_code == 401
+    # The route is gone; the request falls through to the static app, which does
+    # not accept POST — never a session either way.
+    assert resp.status_code in (404, 405)
     assert client.get("/api/role").json()["role"] == "viewer"
-
-
-def test_login_is_unavailable_until_configured(client, monkeypatch):
-    monkeypatch.setattr(config, "ADMIN_EMAIL", "")
-    monkeypatch.setattr(config, "ADMIN_PASSWORD_HASH", "")
-    resp = client.post(
-        "/api/auth/login", json={"email": ADMIN_EMAIL, "password": ADMIN_PASSWORD}
-    )
-    assert resp.status_code == 503
 
 
 def test_logout_revokes_the_session(client, admin):

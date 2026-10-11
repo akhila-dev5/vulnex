@@ -5,6 +5,7 @@ Examples::
     python -m vulnex.cli scan --branches 3.0-dev,fasttrack/3.0
     python -m vulnex.cli scan --packages curl,openssl,sqlite --no-blobs
     python -m vulnex.cli stats
+    python -m vulnex.cli vuln-data --package curl
     python -m vulnex.cli serve --port 8000
 """
 
@@ -73,18 +74,39 @@ def _cmd_export(args: argparse.Namespace) -> int:
     return 0
 
 
-def _cmd_hash_password(args: argparse.Namespace) -> int:
-    """Print a PBKDF2 hash to put in VULNEX_ADMIN_PASSWORD_HASH."""
-    import getpass
+def _cmd_vuln_data(args: argparse.Namespace) -> int:
+    """Read the pre-computed inventory published by VulnerabilityData."""
+    from .sources.vulnerabilitydata import FeedError, VulnerabilityDataSource
 
-    from . import auth
+    source = VulnerabilityDataSource()
+    try:
+        if args.package:
+            package = source.package(args.package, refresh=args.refresh)
+            if not package:
+                print(
+                    f"[vulnex] package not found in the feed: {args.package}",
+                    file=sys.stderr,
+                )
+                return 1
+            print(json.dumps(package, indent=2, default=str))
+            return 0
 
-    password = args.password or getpass.getpass("Admin password: ")
-    if args.password and not args.password.strip():
-        print("[vulnex] refusing an empty password", file=sys.stderr)
-        return 2
-    print(auth.hash_password(password))
-    return 0
+        summary = source.summary(refresh=args.refresh)
+        packages = source.packages(refresh=args.refresh)
+        needle = args.search.strip().lower()
+        if needle:
+            packages = [
+                pkg for pkg in packages
+                if needle in (pkg.get("name") or "").lower()
+            ]
+        summary["packages_matching"] = len(packages)
+        if args.limit:
+            summary["packages"] = packages[: args.limit]
+        print(json.dumps(summary, indent=2, default=str))
+        return 0
+    except FeedError as exc:
+        print(f"[vulnex] vulnerability data unavailable: {exc}", file=sys.stderr)
+        return 1
 
 
 def _cmd_serve(args: argparse.Namespace) -> int:
@@ -140,16 +162,19 @@ def build_parser() -> argparse.ArgumentParser:
     serve.add_argument("--db", default=None)
     serve.set_defaults(func=_cmd_serve)
 
-    hashpw = sub.add_parser(
-        "hash-password",
-        help="Hash the admin password for VULNEX_ADMIN_PASSWORD_HASH",
+    vuln_data = sub.add_parser(
+        "vuln-data",
+        help="Read the pre-computed VulnerabilityData feed (JSON + OVAL)",
     )
-    hashpw.add_argument(
-        "--password",
-        default="",
-        help="Password to hash (omit to be prompted, so it stays out of shell history)",
+    vuln_data.add_argument("--package", default="", help="Show one package's CVE inventory")
+    vuln_data.add_argument("--search", default="", help="Filter packages by name substring")
+    vuln_data.add_argument(
+        "--limit", type=int, default=25, help="Max packages to list (0 = none)"
     )
-    hashpw.set_defaults(func=_cmd_hash_password)
+    vuln_data.add_argument(
+        "--refresh", action="store_true", help="Bypass the on-disk feed cache"
+    )
+    vuln_data.set_defaults(func=_cmd_vuln_data)
 
     return parser
 

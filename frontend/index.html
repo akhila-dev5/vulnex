@@ -76,21 +76,23 @@
       <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="login-title">
         <h2 id="login-title">Sign in as admin</h2>
         <p class="muted small" style="margin:0">
-          VULNEX is read-only until an admin signs in. Use your email and password,
-          or continue with the GitHub account on the allow-list.
+          VULNEX is read-only until an admin signs in. The only admin method is
+          GitHub, using the account on the allow-list — no password is used.
         </p>
-        <input class="input" id="login-email" type="email" placeholder="email" autocomplete="username" />
-        <input class="input" id="login-password" type="password" placeholder="password" autocomplete="current-password" />
+        <p class="muted small" id="login-unconfigured" hidden style="margin:12px 0 0;color:var(--critical)">
+          GitHub sign-in is not configured on this server. Set
+          <span class="mono">GITHUB_OAUTH_CLIENT_ID</span> and
+          <span class="mono">GITHUB_OAUTH_CLIENT_SECRET</span> to enable it.
+        </p>
         <p class="muted small" id="login-error" hidden style="margin:8px 0 0;color:var(--critical)"></p>
-        <div class="toolbar" style="margin:14px 0 0;justify-content:flex-end;gap:8px">
-          <button class="btn btn-ghost" id="login-cancel" type="button">Cancel</button>
-          <button class="btn btn-primary" id="login-submit" type="button">Sign in</button>
-        </div>
-        <div id="login-github-wrap" hidden style="margin-top:12px;border-top:1px solid var(--border);padding-top:12px">
-          <a class="btn btn-ghost" id="login-github" href="/api/auth/github" style="width:100%;justify-content:center">
+        <div id="login-github-wrap" hidden style="margin-top:12px">
+          <a class="btn btn-primary" id="login-github" href="/api/auth/github" style="width:100%;justify-content:center">
             Continue with GitHub
           </a>
           <p class="muted small" id="login-github-hint" style="margin:8px 0 0"></p>
+        </div>
+        <div class="toolbar" style="margin:14px 0 0;justify-content:flex-end;gap:8px">
+          <button class="btn btn-ghost" id="login-cancel" type="button">Cancel</button>
         </div>
       </div>
     </div>
