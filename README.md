@@ -12,7 +12,7 @@ scheduled scan, GitHub Pages for the read-only static snapshot, and a Render fre
 web service for the live console (API + admin GitHub sign-in).
 
 ```
-Python 3.10+ · FastAPI · SQLite · build-free vanilla JS · GitHub Actions · GitHub Pages
+Python 3.11+ · FastAPI · SQLite · React + TypeScript + Vite · GitHub Actions
 ```
 
 <p align="center">
@@ -45,10 +45,14 @@ Python 3.10+ · FastAPI · SQLite · build-free vanilla JS · GitHub Actions · 
 
 ## What it does
 
-- **Scans real package data.** Parses every `.spec` file from the Azure Linux
-  branches `3.0-dev` and `fasttrack/3.0` directly from the GitHub tree API — package
-  name, version, release, epoch, `.spec` path, `Source0`/`Source1` tarball URLs and
-  every `Patch:` entry. Nothing is hard-coded; `data/vulnex.db` is a real snapshot.
+- **Scans the official Azure Linux 3.0 release branch.** The default source is
+  `microsoft/azurelinux@3.0`, not the repository default branch or a personal test
+  branch. The scanner parses the live `.spec` tree through GitHub's tree API — package
+  name, version, release, epoch, `.spec` path, source tarball URLs and `Patch:` entries.
+  Nothing is hard-coded; `data/vulnex.db` is the persisted scan snapshot.
+- **Understands older 3.0 snapshots.** The dashboard's release filter maps the label
+  `3.0` to legacy snapshot records from `3.0-dev` and `fasttrack/3.0` so an existing
+  database remains viewable until the next official `3.0` scan replaces the snapshot.
 - **Identifies CVEs with version-range logic.** Each package EVR
   (`[epoch:]version-release`) is compared against OSV advisory `introduced` / `fixed` /
   `last_affected` events using a dependency-free port of RPM's `rpmvercmp`
@@ -646,3 +650,20 @@ A discovered upstream commit or patch-looking reference is **candidate evidence*
 - The scanner is currently configured to scan Azure Linux branch `3.0`. The branch selector also exposes `4.0`, but the UI labels it as not scanned and disables the scan action for that branch until scanning support is configured.
 - Affected-file details are limited to paths and artifacts present in the stored scan/source evidence. The dashboard displays an explicit empty state when that evidence is missing.
 - Google OAuth credentials must remain server-side in Render environment variables. The client redirect URI must match `/api/auth/google/callback` exactly.
+
+
+## Patch availability filter
+
+The affected-findings list supports **Any patch state**, **Patch available**, and
+**Patch not available**. “Patch available” means the scanner found an upstream fix
+commit or patchable advisory reference. “Patch not available” means no such candidate
+was found in the available evidence; it is not proof that no fix exists anywhere.
+Only the current scan's stored evidence is used. The filter is applied server-side
+before pagination.
+
+## Fresh scan behavior
+
+The admin **Scan Now** action runs the official `microsoft/azurelinux@3.0` scan in a
+background thread. The UI polls scan status and reloads the current package and
+finding snapshot when the scan finishes. The scanner does not scan `main`, the
+`azurelinux-test` repository, or the 4.0 branch by default.
