@@ -1,7 +1,7 @@
 # VULNEX
 
 **Azure Linux CVE scanner and security dashboard.** VULNEX reads the real RPM spec
-tree of [Azure Linux](https://github.com/microsoft/azurelinux), matches every package
+tree exclusively from [akhila-dev5/azurelinux-test](https://github.com/akhila-dev5/azurelinux-test), matches every package
 against the official Microsoft Azure Linux advisory database, and then *verifies* each
 hit against the distro's own backport patches — so the dashboard shows what is actually
 exploitable, not a keyword soup.
@@ -45,14 +45,11 @@ Python 3.11+ · FastAPI · SQLite · React + TypeScript + Vite · GitHub Actions
 
 ## What it does
 
-- **Scans the official Azure Linux 3.0 release branch.** The default source is
-  `microsoft/azurelinux@3.0`, not the repository default branch or a personal test
-  branch. The scanner parses the live `.spec` tree through GitHub's tree API — package
+- **Scans the official Azure Linux 3.0 release branch.** The only source repository is
+  `akhila-dev5/azurelinux-test`, with the selected branch controlling the scan. The scanner parses the live `.spec` tree through GitHub's tree API — package
   name, version, release, epoch, `.spec` path, source tarball URLs and `Patch:` entries.
   Nothing is hard-coded; `data/vulnex.db` is the persisted scan snapshot.
-- **Understands older 3.0 snapshots.** The dashboard's release filter maps the label
-  `3.0` to legacy snapshot records from `3.0-dev` and `fasttrack/3.0` so an existing
-  database remains viewable until the next official `3.0` scan replaces the snapshot.
+- **Understands older 3.0 snapshots.** The dashboard's release filter maps `3.0` and `4.0` to branch records in the same fork, and can display legacy snapshot branch names where present.
 - **Identifies CVEs with version-range logic.** Each package EVR
   (`[epoch:]version-release`) is compared against OSV advisory `introduced` / `fixed` /
   `last_affected` events using a dependency-free port of RPM's `rpmvercmp`
@@ -663,7 +660,4 @@ before pagination.
 
 ## Fresh scan behavior
 
-The admin **Scan Now** action runs the official `microsoft/azurelinux@3.0` scan in a
-background thread. The UI polls scan status and reloads the current package and
-finding snapshot when the scan finishes. The scanner does not scan `main`, the
-`azurelinux-test` repository, or the 4.0 branch by default.
+The admin **Scan Now** action scans `akhila-dev5/azurelinux-test` using the configured branch. The default branch is `3.0`; `4.0` can be selected and scanned from this same fork. The UI polls scan status and reloads findings and packages when the scan finishes.
