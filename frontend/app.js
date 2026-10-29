@@ -4,7 +4,7 @@
 "use strict";
 
 const API = "/api";
-const PRODUCT_NAME = "Vulnex";
+
 // Set by the GitHub Pages build (vulnex export); null for the live API.
 const STATIC = window.Vulnex_STATIC || null;
 // The exported snapshot has no backend, so it is always the read-only tier.
