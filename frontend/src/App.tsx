@@ -32,7 +32,6 @@ type Stats = {
 };
 
 const API = "/api";
-const ADMIN_EMAIL = "gurujuakhila.dev@gmail.com";
 const severityClass = (value?: string) => {
   const v = (value || "unknown").toLowerCase();
   return ["critical", "high", "medium", "low"].includes(v) ? v : "unknown";
@@ -106,7 +105,7 @@ function App() {
         : findings.items.filter(item => severityClass(item.severity) === severity);
       const branchFiltered = filtered.filter(item => item.branch === "3.0");
       setRows(activeTab === "packages" ? [] : branchFiltered);
-      setTotal(activeTab === "packages" ? packages.total : (severity === "all" ? findings.total : branchFiltered.length));
+      setTotal(activeTab === "packages" ? packages.total : branchFiltered.length);
       setPackageRows(packages.items);
       setPackageTotal(packages.total);
     } catch (e) {
