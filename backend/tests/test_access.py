@@ -331,6 +331,14 @@ def test_findings_carry_patch_availability_links_and_deep(client):
     assert deep["tarball"]["name"] == "demo-1.2.3.tar.gz"
 
 
+def test_google_admin_allowlist_accepts_only_configured_email(monkeypatch):
+    monkeypatch.setattr(config, "ADMIN_EMAIL_ALLOWLIST", ADMIN_EMAIL)
+    assert auth.google_login_allowed(ADMIN_EMAIL, verified=True)
+    assert auth.google_login_allowed(ADMIN_EMAIL.upper(), verified=True)
+    assert not auth.google_login_allowed("another.user@gmail.com", verified=True)
+    assert not auth.google_login_allowed(ADMIN_EMAIL, verified=False)
+
+
 def test_stats_expose_roles_without_keys(client):
     roles = client.get("/api/stats").json()["roles"]
     assert roles["admin"]["identity"] == config.ADMIN_IDENTITY

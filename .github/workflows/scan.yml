@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       branches:
-        description: "Comma-separated branches to scan"
+        description: "Branches from akhila-dev5/azurelinux-test to scan (3.0 or 4.0)"
         default: "3.0"
       enrich_limit:
         description: "Max CVEs to enrich from NVD/MITRE/Red Hat/GHSA"
@@ -42,7 +42,7 @@ jobs:
         working-directory: backend
 
   scan:
-    name: Scan Azure Linux
+    name: Scan azurelinux-test fork
     needs: test
     runs-on: ubuntu-latest
     steps:
@@ -61,7 +61,9 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
-          VULNEX_BRANCHES: "3.0"
+          VULNEX_REPO_OWNER: akhila-dev5
+          VULNEX_REPO_NAME: azurelinux-test
+          VULNEX_BRANCHES: ${{ github.event.inputs.branches || '3.0' }}
         run: |
           python -m vulnex.cli scan \
             --branches "${VULNEX_BRANCHES}" \

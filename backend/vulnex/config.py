@@ -30,7 +30,7 @@ DEFAULT_BRANCHES = [
 ]
 
 # Vulnerability intelligence ----------------------------------------------
-# OSV publishes the official Microsoft Azure Linux advisory database under the
+# OSV advisory matching is applied to packages discovered only from azurelinux-test under the
 # "Azure Linux:<major>" ecosystem, with RPM version-release "fixed" events.
 OSV_ECOSYSTEM = os.environ.get("VULNEX_OSV_ECOSYSTEM", "Azure Linux:3")
 # Optional corroborating OSV ecosystems queried by package name (no version,
@@ -79,14 +79,12 @@ ROLE_AUTOMATION = "automation"
 
 # Admin identity shown in the UI and stored on triage records. The email is a
 # display/owner value only: the admin credential is GitHub, not a password.
-ADMIN_IDENTITY = os.environ.get("VULNEX_ADMIN_IDENTITY", "gurujuakhila.dev@gmail.com")
-ADMIN_EMAIL = os.environ.get("VULNEX_ADMIN_EMAIL", "gurujuakhila.dev@gmail.com").strip().lower()
-
-# Google authentication for the sole administrator. Configure a Google OAuth
-# web client with callback ``<deployment>/api/auth/google/callback``.
-ADMIN_EMAIL_ALLOWLIST = os.environ.get(
-    "VULNEX_ADMIN_EMAIL", "gurujuakhila.dev@gmail.com"
-).strip().lower()
+# Exactly one Google account is authorized for administrator access.
+# This allow-list is intentionally fixed in code; other environment values must
+# not silently grant administrator access to an additional account.
+ADMIN_IDENTITY = "gurujuakhila.dev@gmail.com"
+ADMIN_EMAIL = "gurujuakhila.dev@gmail.com"
+ADMIN_EMAIL_ALLOWLIST = "gurujuakhila.dev@gmail.com"
 GOOGLE_OAUTH_CLIENT_ID = os.environ.get("GOOGLE_OAUTH_CLIENT_ID", "").strip()
 GOOGLE_OAUTH_CLIENT_SECRET = os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET", "").strip()
 GOOGLE_OAUTH_REDIRECT = os.environ.get("VULNEX_GOOGLE_REDIRECT", "").strip()

@@ -1,18 +1,18 @@
 # VULNEX
 
 **Azure Linux CVE scanner and security dashboard.** VULNEX reads the real RPM spec
-tree of [Azure Linux](https://github.com/microsoft/azurelinux), matches every package
-against the official Microsoft Azure Linux advisory database, and then *verifies* each
+tree exclusively from [akhila-dev5/azurelinux-test](https://github.com/akhila-dev5/azurelinux-test), matches every package
+against the Azure Linux advisory ecosystem, and then *verifies* each
 hit against the distro's own backport patches — so the dashboard shows what is actually
 exploitable, not a keyword soup.
 
 It runs entirely on free infrastructure: public vulnerability data, SQLite, a
 dependency-light FastAPI service, a build-free frontend, GitHub Actions for the
 scheduled scan, GitHub Pages for the read-only static snapshot, and a Render free
-web service for the live console (API + admin GitHub sign-in).
+web service for the live console (API + admin Google sign-in restricted to `gurujuakhila.dev@gmail.com`).
 
 ```
-Python 3.10+ · FastAPI · SQLite · build-free vanilla JS · GitHub Actions · GitHub Pages
+Python 3.11+ · FastAPI · SQLite · React + TypeScript + Vite · GitHub Actions
 ```
 
 <p align="center">
@@ -45,10 +45,11 @@ Python 3.10+ · FastAPI · SQLite · build-free vanilla JS · GitHub Actions · 
 
 ## What it does
 
-- **Scans real package data.** Parses every `.spec` file from the Azure Linux
-  branches `3.0-dev` and `fasttrack/3.0` directly from the GitHub tree API — package
-  name, version, release, epoch, `.spec` path, `Source0`/`Source1` tarball URLs and
-  every `Patch:` entry. Nothing is hard-coded; `data/vulnex.db` is a real snapshot.
+- **Scans only the configured fork.** The only source repository is
+  `akhila-dev5/azurelinux-test`, with the selected branch controlling the scan. The scanner parses the live `.spec` tree through GitHub's tree API — package
+  name, version, release, epoch, `.spec` path, source tarball URLs and `Patch:` entries.
+  Nothing is hard-coded; `data/vulnex.db` is the persisted scan snapshot.
+- **Understands older 3.0 snapshots.** The dashboard's release filter maps `3.0` and `4.0` to branch records in the same fork, and can display legacy snapshot branch names where present.
 - **Identifies CVEs with version-range logic.** Each package EVR
   (`[epoch:]version-release`) is compared against OSV advisory `introduced` / `fixed` /
   `last_affected` events using a dependency-free port of RPM's `rpmvercmp`
@@ -183,7 +184,7 @@ on both branches, so branch is always part of the key.
 ### 2. Version-range matching with real RPM semantics
 
 OSV publishes the official Microsoft Azure Linux advisory database under the ecosystem
-**`Azure Linux:3`**, imported from `microsoft/AzureLinuxVulnerabilityData`. Its
+**`Azure Linux:3`**, imported from the configured advisory ecosystem. Its
 advisories (`AZL-####`) carry RPM `fixed` / `last_affected` boundaries:
 
 ```json
@@ -243,7 +244,7 @@ Two real examples from the current snapshot:
 
 | Source | Used for | Cost |
 | --- | --- | --- |
-| **OSV.dev — `Azure Linux:3`** | Primary detection: official Azure Linux advisories with RPM `fixed`/`last_affected` events | free |
+| **OSV.dev — `Azure Linux:3`** | Primary detection: Azure Linux advisories with RPM `fixed`/`last_affected` events | free |
 | **OSV.dev — Red Hat / Debian / Ubuntu / Alpine** | Cross-distribution corroboration of CVE ids | free |
 | **NVD** | CVSS severity, CWE, references | free (optional `NVD_API_KEY` raises limits) |
 | **MITRE CVE (cveawg)** | Authoritative CVE identity and description | free |
@@ -372,7 +373,7 @@ vulnex export   Write the static GitHub Pages dashboard + JSON snapshot (--out)
 | `GET` | `/api/triage` | Every finding's baked triage view (status, resolution, owner, PR, patch verdict) |
 | `GET` | `/api/role` | Access tier (`viewer` / `admin` / `automation`), granted capabilities and which sign-in methods are configured |
 | `POST` | `/api/auth/logout` | Drop the caller's session token |
-| `GET` | `/api/auth/github` | Start GitHub sign-in (302 to GitHub; `503` when no OAuth app is configured) |
+| `GET` | `/api/auth/github` | Start Google sign-in (302 to GitHub; `503` when no OAuth app is configured) |
 | `GET` | `/api/auth/github/callback` | Finish GitHub sign-in for the allow-listed account and redirect back with `#vulnex_token=…` |
 | `POST` | `/api/triage/comment` | Admin only — add a triage comment to a finding (`cve_id`, `branch`, `spec_path`, `body`) |
 | `POST` | `/api/triage/dispute` | Admin only — raise a dispute (`reason`) and move the finding to `in_progress` |
@@ -643,6 +644,20 @@ A discovered upstream commit or patch-looking reference is **candidate evidence*
 ### Current deployment limitations
 
 - The current persistence layer remains SQLite. PostgreSQL support and a migration path have not been implemented in this change; do not describe this deployment as using PostgreSQL.
-- The scanner is currently configured to scan Azure Linux branch `3.0`. The branch selector also exposes `4.0`, but the UI labels it as not scanned and disables the scan action for that branch until scanning support is configured.
+- The scanner uses only `akhila-dev5/azurelinux-test`. Branches `3.0` and `4.0` are selectable and the selected branch is passed to the scan request.
 - Affected-file details are limited to paths and artifacts present in the stored scan/source evidence. The dashboard displays an explicit empty state when that evidence is missing.
 - Google OAuth credentials must remain server-side in Render environment variables. The client redirect URI must match `/api/auth/google/callback` exactly.
+
+
+## Patch availability filter
+
+The affected-findings list supports **Any patch state**, **Patch available**, and
+**Patch not available**. “Patch available” means the scanner found an upstream fix
+commit or patchable advisory reference. “Patch not available” means no such candidate
+was found in the available evidence; it is not proof that no fix exists anywhere.
+Only the current scan's stored evidence is used. The filter is applied server-side
+before pagination.
+
+## Fresh scan behavior
+
+The admin **Scan Now** action scans the selected branch of `akhila-dev5/azurelinux-test` in a background thread. The UI polls scan status and reloads findings and packages when the scan finishes.

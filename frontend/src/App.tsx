@@ -150,6 +150,24 @@ function App() {
 
   useEffect(() => { void load(); }, [load]);
 
+  // Poll a background scan and reload the live snapshot as soon as it finishes.
+  useEffect(() => {
+    if (scanStatus !== "running") return;
+    const timer = window.setInterval(async () => {
+      try {
+        const status = await request<{ manager?: { running?: boolean; error?: string } }>("/scan/status", {}, token);
+        if (status.manager?.running) return;
+        setScanStatus("idle");
+        if (status.manager?.error) setToast("Scan failed: " + status.manager.error);
+        else setToast("Scan completed; findings refreshed");
+        await load();
+      } catch (e) {
+        setToast("Could not check scan status: " + messageOf(e));
+      }
+    }, 5000);
+    return () => window.clearInterval(timer);
+  }, [scanStatus, token, load]);
+
   const refresh = () => { void load(); };
 
   const toggleExpanded = async (row: Finding, key: string) => {
@@ -210,8 +228,8 @@ function App() {
     if (!canWrite) return;
     setScanStatus("starting");
     try {
-      await request("/scan", { method: "POST", body: JSON.stringify({ branches: ["3.0"] }) }, token);
-      setScanStatus("running"); setToast("Azure Linux 3.0 scan started");
+      await request("/scan", { method: "POST", body: JSON.stringify({ branches: [branch] }) }, token);
+      setScanStatus("running"); setToast(`Azure Linux ${branch} scan started from azurelinux-test`);
     } catch (e) { setScanStatus("idle"); setToast(messageOf(e)); }
   };
 
@@ -232,8 +250,8 @@ function App() {
           <span><strong>Vulnex</strong><small>Security Intelligence</small></span>
         </a>
         <div className="scope-card">
-          <span className="scope-dot" /><div><small>SCAN SCOPE</small><strong>Azure Linux · {branch}</strong></div>
-          <StatusPill tone={branch === "3.0" ? "good" : "neutral"}>{branch === "3.0" ? "Configured" : "Not scanned"}</StatusPill>
+          <span className="scope-dot" /><div><small>SCAN SCOPE</small><strong>azurelinux-test · {branch}</strong></div>
+          <StatusPill tone={branch === "3.0" ? "good" : "neutral"}>{"Configured"}</StatusPill>
         </div>
         <nav className="side-nav" aria-label="Main navigation">
           <button className={activeTab === "triage" ? "active" : ""} onClick={() => { setActiveTab("triage"); setPage(1); }}><LayoutDashboard size={17} /> Dashboard</button>
@@ -251,7 +269,7 @@ function App() {
           <div className="mobile-brand"><ShieldCheck size={20} /><b>Vulnex</b></div>
           <div className="heading">
             <h1>{activeTab === "triage" ? "Security overview" : activeTab === "affected" ? "Affected findings" : "Package inventory"}</h1>
-            <p>Security findings, patch evidence and review history for Azure Linux {branch}.</p>
+            <p>Security findings, patch evidence and review history from azurelinux-test branch {branch}.</p>
           </div>
           <div className="top-actions">
             <StatusPill tone={canWrite ? "good" : "neutral"}>{canWrite ? "Administrator" : "Guest · read-only"}</StatusPill>
@@ -272,7 +290,7 @@ function App() {
           <div className="search-field"><Search size={17} /><input value={query} onChange={e => { setQuery(e.target.value); setPage(1); }} placeholder="Search CVE or package name…" aria-label="Search CVE or package name" /></div>
           <label className="filter-select"><Filter size={15} /><span>Severity</span><select value={severity} onChange={e => { setSeverity(e.target.value); setPage(1); }}><option value="all">All severities</option><option value="critical">Critical</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option><option value="unknown">Unknown</option></select></label>
           <label className="filter-select"><SlidersHorizontal size={15} /><span>Branch</span><select value={branch} onChange={e => { setBranch(e.target.value); setPage(1); }}><option value="3.0">3.0</option><option value="4.0">4.0</option></select></label>
-          <label className="filter-select"><span>Patch</span><select value={patchFilter} onChange={e => { setPatchFilter(e.target.value); setPage(1); }}><option value="all">Any patch state</option><option value="available">Candidate found</option><option value="unknown">Unknown / insufficient evidence</option></select></label>
+          <label className="filter-select"><span>Patch</span><select value={patchFilter} onChange={e => { setPatchFilter(e.target.value); setPage(1); }}><option value="all">Any patch state</option><option value="available">Patch available</option><option value="unavailable">Patch not available</option></select></label>
           <label className="filter-select"><span>Triage</span><select value={triageFilter} onChange={e => { setTriageFilter(e.target.value); setPage(1); }}><option value="all">Any triage</option><option value="open">Open</option><option value="in_progress">In progress</option><option value="triaged">Triaged</option><option value="disputed">Disputed</option></select></label>
           <label className="filter-select"><span>Resolution</span><select value={resolutionFilter} onChange={e => { setResolutionFilter(e.target.value); setPage(1); }}><option value="all">Any resolution</option><option value="affected">Affected</option><option value="disputed">Disputed</option><option value="in_progress">In progress</option><option value="published">Published</option></select></label>
           <button className="btn secondary" onClick={() => { setQuery(""); setSeverity("all"); setBranch("3.0"); setPatchFilter("all"); setTriageFilter("all"); setResolutionFilter("all"); setPage(1); }}><X size={15} /> Clear filters</button>
@@ -283,7 +301,7 @@ function App() {
         <section className="table-card">
           <div className="table-head">
             <div><h2>{activeTab === "triage" ? "Triage queue" : activeTab === "affected" ? "Affected findings" : "Packages"}</h2><p>{total.toLocaleString()} result{total === 1 ? "" : "s"} · Azure Linux 3.0</p></div>
-            <div className="head-meta"><span><Clock3 size={14} /> {stats.last_scan?.finished_at ? new Date(stats.last_scan.finished_at).toLocaleString() : "Waiting for first scan"}</span><button className="icon-btn" onClick={runScan} disabled={!canWrite || branch !== "3.0" || scanStatus === "running"} title={branch === "3.0" ? "Run a 3.0 scan" : "Scanning is currently configured for branch 3.0 only"}><Activity size={16} /></button></div>
+            <div className="head-meta"><span><Clock3 size={14} /> {stats.last_scan?.finished_at ? new Date(stats.last_scan.finished_at).toLocaleString() : "Waiting for first scan"}</span><button className="icon-btn" onClick={runScan} disabled={!canWrite || scanStatus === "running"} title={`Scan branch ${branch} from azurelinux-test`}><Activity size={16} /></button></div>
           </div>
           {busy ? <div className="empty-state"><RefreshCw className="spin" /> Loading vulnerability records…</div>
           : activeTab === "packages" ? <div className="table-scroll"><table>

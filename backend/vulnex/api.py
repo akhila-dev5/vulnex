@@ -122,6 +122,15 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
+def _branches_for_filter(branch: str) -> list[str] | None:
+    """Map release labels to branch names available in the user's azurelinux-test fork."""
+    aliases = {
+        "3.0": ["3.0", "3.0-dev", "fasttrack/3.0"],
+        "4.0": ["4.0", "4.0-dev", "fasttrack/4.0"],
+    }
+    return aliases.get(branch)
+
+
 manager = ScanManager()
 
 
@@ -361,7 +370,8 @@ def get_packages(
 ) -> dict:
     with db.session() as conn:
         rows, total = db.list_packages(
-            conn, search=search, branch=branch, limit=limit, offset=(page - 1) * limit
+            conn, search=search, branch=branch if not _branches_for_filter(branch) else "",
+            branches=_branches_for_filter(branch), limit=limit, offset=(page - 1) * limit
         )
     return {"items": rows, "total": total, "page": page, "limit": limit}
 
@@ -410,7 +420,8 @@ def get_findings(
                 severity=severity,
                 search=search,
                 package=package,
-                branch=branch,
+                branch=branch if not _branches_for_filter(branch) else "",
+                branches=_branches_for_filter(branch),
                 limit=limit,
                 offset=(page - 1) * limit,
             )
@@ -430,7 +441,8 @@ def get_findings(
                 severity=severity,
                 search=search,
                 package=package,
-                branch=branch,
+                branch=branch if not _branches_for_filter(branch) else "",
+                branches=_branches_for_filter(branch),
                 limit=batch_size,
                 offset=offset,
             )
@@ -457,8 +469,6 @@ def get_findings(
             if patch_state == "available" and not patch.get("available"):
                 continue
             if patch_state == "unavailable" and (not patch.get("applicable") or patch.get("available")):
-                continue
-            if patch_state == "unknown" and patch.get("available"):
                 continue
             filtered.append(finding)
 
@@ -788,8 +798,25 @@ def add_assignment_comment(
 def start_scan(request: Request, payload: ScanRequest | None = None) -> JSONResponse:
     require_admin(request)
     payload = payload or ScanRequest()
+    requested_branches = payload.branches or ["3.0"]
+    allowed_branches = {"3.0", "4.0", "3.0-dev", "4.0-dev", "fasttrack/3.0", "fasttrack/4.0"}
+    invalid_branches = sorted(set(requested_branches) - allowed_branches)
+    if invalid_branches:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported branch(es): {', '.join(invalid_branches)}. Choose a branch from azurelinux-test.",
+        )
+    # Use the advisory ecosystem matching the selected release family. The
+    # package/spec inventory itself always comes from the configured azurelinux-test fork.
+    if all(b.startswith("4.0") or b.startswith("fasttrack/4.0") for b in requested_branches):
+        ecosystem = "Azure Linux:4"
+    elif all(b.startswith("3.0") or b.startswith("fasttrack/3.0") for b in requested_branches):
+        ecosystem = "Azure Linux:3"
+    else:
+        raise HTTPException(status_code=400, detail="Scan only one release family at a time (3.0 or 4.0).")
     options = ScanOptions(
-        branches=["3.0"],
+        branches=requested_branches,
+        ecosystem=ecosystem,
         packages=set(payload.packages) if payload.packages else None,
         limit=payload.limit,
         verify_blobs=payload.verify_blobs,
