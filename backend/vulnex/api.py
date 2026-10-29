@@ -516,21 +516,18 @@ def get_cve_deep(cve_id: str, branch: str = "", spec: str = "") -> dict:
     """The Deep view: files inside the package tarball that this CVE touches."""
     cve_id = cve_id.upper()
     with db.session() as conn:
-        finding = db.get_finding(conn, cve_id, spec_path=spec or None) if spec else None
-        if finding is not None and finding.get("status") != config.OPEN_STATUS:
-            finding = None
+        results = [
+            f for f in db.findings_for_cve(conn, cve_id)
+            if f.get("status") == config.OPEN_STATUS
+        ]
+        if branch:
+            results = [f for f in results if f.get("branch") == branch]
+        if spec:
+            results = [f for f in results if f.get("spec_path") == spec]
+        finding = results[0] if results else None
         if finding is None:
-            results = [
-                f for f in db.findings_for_cve(conn, cve_id)
-                if f.get("status") == config.OPEN_STATUS
-            ]
-            if branch:
-                results = [f for f in results if f.get("branch") == branch] or results
-            finding = results[0] if results else None
-        if finding is None:
-            raise HTTPException(status_code=404, detail="CVE not found in the current scan")
+            raise HTTPException(status_code=404, detail="CVE/package/branch combination not found in the current scan")
         return triage.deep_view(finding, _package_for(conn, finding))
-
 
 
 # -- VulnerabilityData feed (pre-computed NVD inventory) ---------------------
