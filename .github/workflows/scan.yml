@@ -42,7 +42,7 @@ jobs:
         working-directory: backend
 
   scan:
-    name: Scan Azure Linux
+    name: Scan azurelinux-test fork
     needs: test
     runs-on: ubuntu-latest
     steps:
