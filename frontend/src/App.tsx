@@ -232,8 +232,8 @@ function App() {
           <span><strong>Vulnex</strong><small>Security Intelligence</small></span>
         </a>
         <div className="scope-card">
-          <span className="scope-dot" /><div><small>SCAN SCOPE</small><strong>Azure Linux · 3.0</strong></div>
-          <StatusPill tone="good">Active</StatusPill>
+          <span className="scope-dot" /><div><small>SCAN SCOPE</small><strong>Azure Linux · {branch}</strong></div>
+          <StatusPill tone={branch === "3.0" ? "good" : "neutral"}>{branch === "3.0" ? "Configured" : "Not scanned"}</StatusPill>
         </div>
         <nav className="side-nav" aria-label="Main navigation">
           <button className={activeTab === "triage" ? "active" : ""} onClick={() => { setActiveTab("triage"); setPage(1); }}><LayoutDashboard size={17} /> Dashboard</button>
@@ -251,7 +251,7 @@ function App() {
           <div className="mobile-brand"><ShieldCheck size={20} /><b>Vulnex</b></div>
           <div className="heading">
             <h1>{activeTab === "triage" ? "Security overview" : activeTab === "affected" ? "Affected findings" : "Package inventory"}</h1>
-            <p>Security findings, patch availability and review history for Azure Linux 3.0.</p>
+            <p>Security findings, patch evidence and review history for Azure Linux {branch}.</p>
           </div>
           <div className="top-actions">
             <StatusPill tone={canWrite ? "good" : "neutral"}>{canWrite ? "Administrator" : "Guest · read-only"}</StatusPill>
@@ -262,7 +262,7 @@ function App() {
         </header>
 
         <section className="summary-grid">
-          <article className="metric-card"><span className="metric-icon blue"><Package size={18} /></span><small>Packages scanned</small><strong>{(stats.total_packages ?? 0).toLocaleString()}</strong><span>Azure Linux 3.0</span></article>
+          <article className="metric-card"><span className="metric-icon blue"><Package size={18} /></span><small>Packages scanned</small><strong>{(stats.total_packages ?? 0).toLocaleString()}</strong><span>Selected branch: {branch}</span></article>
           <article className="metric-card"><span className="metric-icon red"><ShieldAlert size={18} /></span><small>Open findings</small><strong>{(stats.total_findings ?? total).toLocaleString()}</strong><span>Current snapshot</span></article>
           <article className="metric-card"><span className="metric-icon amber"><AlertTriangle size={18} /></span><small>High severity</small><strong>{((stats.severity?.critical ?? 0) + (stats.severity?.high ?? 0)).toLocaleString()}</strong><span>Critical + high</span></article>
           <article className="metric-card"><span className="metric-icon green"><CheckCircle2 size={18} /></span><small>Last completed scan</small><strong>{stats.last_scan?.finished_at ? new Date(stats.last_scan.finished_at).toLocaleDateString() : "—"}</strong><span>{stats.last_scan?.branches || "3.0 only"}</span></article>
@@ -283,7 +283,7 @@ function App() {
         <section className="table-card">
           <div className="table-head">
             <div><h2>{activeTab === "triage" ? "Triage queue" : activeTab === "affected" ? "Affected findings" : "Packages"}</h2><p>{total.toLocaleString()} result{total === 1 ? "" : "s"} · Azure Linux 3.0</p></div>
-            <div className="head-meta"><span><Clock3 size={14} /> {stats.last_scan?.finished_at ? new Date(stats.last_scan.finished_at).toLocaleString() : "Waiting for first scan"}</span><button className="icon-btn" onClick={runScan} disabled={!canWrite || scanStatus === "running"} title="Run a 3.0 scan"><Activity size={16} /></button></div>
+            <div className="head-meta"><span><Clock3 size={14} /> {stats.last_scan?.finished_at ? new Date(stats.last_scan.finished_at).toLocaleString() : "Waiting for first scan"}</span><button className="icon-btn" onClick={runScan} disabled={!canWrite || branch !== "3.0" || scanStatus === "running"} title={branch === "3.0" ? "Run a 3.0 scan" : "Scanning is currently configured for branch 3.0 only"}><Activity size={16} /></button></div>
           </div>
           {busy ? <div className="empty-state"><RefreshCw className="spin" /> Loading vulnerability records…</div>
           : activeTab === "packages" ? <div className="table-scroll"><table>
