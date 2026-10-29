@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   Activity, AlertCircle, AlertTriangle, ArrowUpRight, CheckCircle2,
   ChevronDown, ChevronRight, Clock3, FileSearch, Filter, GitPullRequest,
@@ -242,7 +242,7 @@ function App() {
             <tbody>{rows.map(row => {
               const key = [row.cve_id, row.branch, row.spec_path].join("::");
               const triage = row.triage || {};
-              return <tbody key={key} className="finding-body">
+              return <React.Fragment key={key}>
                 <tr>
                   <td><button className="link-button" onClick={() => setExpandedKey(expandedKey === key ? "" : key)}><strong>{row.package_name || "Unknown package"}</strong><small>{row.package_version || row.cve_id}</small></button><a className="sub-link" href={`#/cve/${encodeURIComponent(row.cve_id)}`}>{row.cve_id} <ArrowUpRight size={12} /></a></td>
                   <td><code>{row.branch}</code></td><td><StatusPill tone={severityClass(row.severity)}>{row.severity || "Unknown"}</StatusPill></td>
@@ -265,7 +265,7 @@ function App() {
                     <div><small>Finding</small><strong>{row.cve_id}</strong><p>{row.description || "The source does not provide a description for this finding."}</p><small>Patch link</small>{row.patch_availability?.patch_link ? <a href={row.patch_availability.patch_link} target="_blank" rel="noreferrer">{row.patch_availability.patch_link}</a> : "No patch link found in current record."}</div>
                   </div>
                 </td></tr>}
-              </tbody>;
+              </React.Fragment>;
             })}</tbody>
           </table></div>}
           <div className="pagination"><span>Page {page} · {(activeTab === "packages" ? packageTotal : total).toLocaleString()} rows</span><div><button className="btn secondary" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page <= 1 || busy}>Previous</button><button className="btn secondary" onClick={() => setPage(p => p + 1)} disabled={busy || (activeTab === "packages" ? packageRows.length < 25 : rows.length < 25)}>Next</button></div></div>
