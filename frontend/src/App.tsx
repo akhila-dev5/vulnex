@@ -21,7 +21,7 @@ type RoleInfo = {
 type Finding = {
   cve_id: string; package_name: string; package_version?: string; branch: string;
   spec_path: string; severity?: string; cvss_score?: number | null; description?: string;
-  status?: string; detected_on?: string; triage?: Record<string, unknown> | null;
+  status?: string; detected_on?: string; fixed_version?: string; advisory_id?: string; source?: string; triage?: Record<string, unknown> | null;
   patch_availability?: { applicable?: boolean; available?: boolean; ai_verdict?: string; final_verdict?: string; possible_links?: string[]; analysis?: string[]; patch_link?: string; available_since?: string };
 };
 type PageResult<T> = { items: T[]; total: number; page?: number; limit?: number };
@@ -292,7 +292,7 @@ function App() {
           </table></div>
           : rows.length === 0 ? <div className="empty-state"><FileSearch size={26} /><strong>No findings in this view</strong><span>Try another search or run a fresh scan for branch 3.0.</span></div>
           : <div className="table-scroll"><table>
-            <thead><tr><th>Vulnerability / package</th><th>Branch</th><th>Severity</th><th>Patch availability</th><th>Triage status</th><th>Resolution</th><th>Owner</th><th>Actions</th><th /></tr></thead>
+            <thead><tr><th>Vulnerability / package</th><th>Branch</th><th>Severity</th><th>Patch availability</th><th>Triage status</th><th>Resolution</th><th>Fixed version</th><th>Source ID</th><th>Owner</th><th>Actions</th><th /></tr></thead>
             <tbody>{rows.map(row => {
               const key = [row.cve_id, row.branch, row.spec_path].join("::");
               const triage = row.triage || {};
@@ -301,7 +301,7 @@ function App() {
                   <td><button className="link-button" onClick={() => void openDetail(row.cve_id)}><strong>{row.cve_id}</strong><small>{row.package_name || "Unknown package"} · {row.package_version || "version unavailable"}</small></button></td>
                   <td><code>{row.branch}</code></td><td><StatusPill tone={severityClass(row.severity)}>{row.severity || "Unknown"}</StatusPill></td>
                   <td><StatusPill tone={row.patch_availability?.available ? "good" : row.patch_availability?.applicable === false ? "neutral" : "warning"}>{row.patch_availability?.available ? "Candidate found" : row.patch_availability?.applicable === false ? "Not applicable" : "Unknown"}</StatusPill>{row.patch_availability?.patch_link && <a className="sub-link" href={row.patch_availability.patch_link} target="_blank" rel="noopener noreferrer">Evidence link <ArrowUpRight size={12} /></a>}</td>
-                  <td>{String(triage.triage_status || "Untriaged")}</td><td>{String(triage.resolution_status || row.status || "In progress")}</td><td>{String(triage.owner || "—")}</td>
+                  <td>{String(triage.triage_status || "Untriaged")}</td><td>{String(triage.resolution_status || row.status || "Unknown")}</td><td>{row.fixed_version || "Not available"}</td><td>{row.advisory_id || row.source || "Not available"}</td><td>{String(triage.owner || "—")}</td>
                   <td><div className="action-wrap">
                     <button className="btn action-btn" onClick={() => void openDeep(row)}><FileSearch size={14} /> Deep</button>
                     <button className="btn action-btn" aria-expanded={actionMenuKey === key} onClick={() => setActionMenuKey(actionMenuKey === key ? "" : key)}>Actions <ChevronDown size={13} /></button>
@@ -312,7 +312,7 @@ function App() {
                   </div></td>
                   <td><button className="icon-btn" onClick={() => void toggleExpanded(row, key)} aria-label="Expand row">{expandedKey === key ? <ChevronDown size={16} /> : <ChevronRight size={16} />}</button></td>
                 </tr>
-                {expandedKey === key && <tr className="expanded"><td colSpan={9}>
+                {expandedKey === key && <tr className="expanded"><td colSpan={11}>
                   <div className="expanded-grid">
                     <div><small>Patch evidence</small><strong>{row.patch_availability?.available ? "Candidate patch link found — not independently verified" : "Insufficient evidence to confirm a patch"}</strong><small>Source package specification</small>{row.spec_path ? <a href={`https://github.com/akhila-dev5/azurelinux-test/blob/${encodeURIComponent(row.branch)}/${row.spec_path}`} target="_blank" rel="noopener noreferrer">{row.spec_path}</a> : <span>Not available</span>}</div>
                     <div><small>Finding</small><strong>{row.cve_id}</strong><p>{row.description || "The approved source does not provide a description for this finding."}</p><small>Recorded patch result</small>{row.patch_availability?.patch_link ? <a href={row.patch_availability.patch_link} target="_blank" rel="noopener noreferrer">{row.patch_availability.patch_link}</a> : <span>Not recorded</span>}</div>
