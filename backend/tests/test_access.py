@@ -206,6 +206,14 @@ def test_admin_can_comment_and_dispute(client, admin):
     assert dispute.json()["comment"]["kind"] == "dispute"
     assert dispute.json()["triage"]["triage_status"] == "disputed"
 
+    filtered = client.get(
+        "/api/findings",
+        params={"branch": FINDING["branch"], "triage_status": "disputed"},
+    )
+    assert filtered.status_code == 200
+    assert filtered.json()["total"] == 1
+    assert filtered.json()["items"][0]["cve_id"] == FINDING["cve_id"]
+
     history = client.get(
         "/api/triage/comments",
         params={**FINDING},
