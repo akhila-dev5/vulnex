@@ -301,7 +301,7 @@ def run_scan(
         ]
         patches = [row for s in specs for row in _patch_rows(s, scan_id)]
         finding_rows = [_finding_row(f, scan_id) for f in all_findings]
-        db.replace_snapshot(conn, scan_id, packages, patches, finding_rows)
+        db.replace_snapshot(conn, scan_id, packages, patches, finding_rows, branches=options.branches)
 
         counts = _tally(all_findings)
         counts["packages"] = len(specs)
