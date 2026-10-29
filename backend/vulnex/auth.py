@@ -2,11 +2,11 @@
 
 Two credentials exist, for two kinds of caller:
 
-* a human **admin**, who signs in with GitHub only (any account whose login is
+* a human **admin**, who signs in with Google only (any account whose login is
   on the allow-list) and then presents the opaque session token this module
   mints;
 * the **automation** machine identity, which presents one static key and may only
-  set the GitHub CVE pull request.
+  set the Google CVE pull request.
 
 Sessions live in memory on purpose: the tool has no user table, a restart is a
 deployment event, and a token is worthless once the process is gone. There is no
@@ -30,14 +30,14 @@ __all__ = [
     "sessions",
     "new_oauth_state",
     "consume_oauth_state",
-    "github_authorize_url",
-    "github_exchange",
-    "github_login_allowed",
+    "google_authorize_url",
+    "google_exchange",
+    "google_login_allowed",
 ]
 
-_GITHUB_AUTHORIZE = "https://github.com/login/oauth/authorize"
-_GITHUB_TOKEN = "https://github.com/login/oauth/access_token"
-_GITHUB_USER = "https://api.github.com/user"
+_GOOGLE_AUTHORIZE = "https://google.com/login/oauth/authorize"
+_GOOGLE_TOKEN = "https://google.com/login/oauth/access_token"
+_GOOGLE_USER = "https://api.google.com/user"
 
 
 # -- sessions ---------------------------------------------------------------
@@ -88,7 +88,7 @@ class SessionStore:
 sessions = SessionStore()
 
 
-# -- GitHub OAuth -----------------------------------------------------------
+# -- Google OAuth -----------------------------------------------------------
 # Short-lived pending ``state`` values so the callback cannot be forged.
 _STATE_TTL = 600
 _states: dict[str, float] = {}
@@ -113,32 +113,35 @@ def consume_oauth_state(state: str | None) -> bool:
     return bool(expiry and expiry > time.time())
 
 
-def github_authorize_url(redirect_uri: str, state: str) -> str:
-    """The GitHub consent URL, scoped to reading the signed-in account."""
+def google_authorize_url(redirect_uri: str, state: str) -> str:
+    """The Google consent URL, scoped to reading the signed-in account."""
     query = urlencode(
         {
-            "client_id": config.GITHUB_OAUTH_CLIENT_ID,
+            "client_id": config.GOOGLE_OAUTH_CLIENT_ID,
             "redirect_uri": redirect_uri,
-            "scope": "read:user",
+            "scope": "openid email profile",
+            "response_type": "code",
+            "access_type": "online",
             "state": state,
-            "allow_signup": "false",
+            "include_granted_scopes": "true",
         }
     )
-    return f"{_GITHUB_AUTHORIZE}?{query}"
+    return f"{_GOOGLE_AUTHORIZE}?{query}"
 
 
-def github_exchange(code: str, redirect_uri: str) -> dict | None:
-    """Swap an OAuth code for the GitHub account, or ``None`` when it fails."""
-    if not config.github_login_configured():
+def google_exchange(code: str, redirect_uri: str) -> dict | None:
+    """Swap an OAuth code for the Google account, or ``None`` when it fails."""
+    if not config.google_login_configured():
         return None
     try:
         token_resp = requests.post(
-            _GITHUB_TOKEN,
+            _GOOGLE_TOKEN,
             data={
-                "client_id": config.GITHUB_OAUTH_CLIENT_ID,
-                "client_secret": config.GITHUB_OAUTH_CLIENT_SECRET,
+                "client_id": config.GOOGLE_OAUTH_CLIENT_ID,
+                "client_secret": config.GOOGLE_OAUTH_CLIENT_SECRET,
                 "code": code,
                 "redirect_uri": redirect_uri,
+                "grant_type": "authorization_code",
             },
             headers={"Accept": "application/json"},
             timeout=config.HTTP_TIMEOUT,
@@ -148,20 +151,23 @@ def github_exchange(code: str, redirect_uri: str) -> dict | None:
         if not access_token:
             return None
         user_resp = requests.get(
-            _GITHUB_USER,
+            _GOOGLE_USER,
             headers={
                 "Authorization": f"Bearer {access_token}",
-                "Accept": "application/vnd.github+json",
+                "Accept": "application/vnd.google+json",
                 "User-Agent": config.user_agent(),
             },
             timeout=config.HTTP_TIMEOUT,
         )
         user_resp.raise_for_status()
-        return user_resp.json()
+        profile = user_resp.json()
+        if profile.get("email") and profile.get("email_verified") is True:
+            return profile
+        return None
     except Exception:  # network / bad code / revoked app are all "not signed in"
         return None
 
 
-def github_login_allowed(login: str | None) -> bool:
-    """Only the configured GitHub account may sign in as admin."""
-    return bool(login) and login.strip().lower() == config.ADMIN_GITHUB
+def google_login_allowed(email: str | None, verified: bool = False) -> bool:
+    """Only the configured, verified administrator email may sign in."""
+    return bool(verified and email) and email.strip().lower() == config.ADMIN_EMAIL_ALLOWLIST
