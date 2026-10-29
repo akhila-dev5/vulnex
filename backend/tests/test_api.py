@@ -229,6 +229,46 @@ def test_release_branch_filter_excludes_development_branches(client):
     assert packages["total"] == 0
 
 
+def test_stats_are_scoped_to_selected_stable_branch(client):
+    stats = client.get("/api/stats", params={"branch": "3.0"}).json()
+    # The fixture's only rows are on 3.0-dev. Do not show them as stable 3.0 data.
+    assert stats["selected_branch"] == "3.0"
+    assert stats["total_packages"] == 0
+    assert stats["total_findings"] == 0
+    assert not stats["last_scan"].get("finished_at")
+
+
+def test_snapshot_refresh_preserves_other_stable_branch_and_purges_legacy_rows(client):
+    conn = db.connect()
+    try:
+        scan3 = db.start_scan(conn, ["3.0"], "Azure Linux:3")
+        db.replace_snapshot(
+            conn, scan3,
+            packages=[_package(scan_id=scan3, branch="3.0")],
+            patches=[],
+            findings=[_finding(scan_id=scan3, branch="3.0")],
+            branches=["3.0"],
+        )
+        scan4 = db.start_scan(conn, ["4.0"], "Azure Linux:4")
+        db.replace_snapshot(
+            conn, scan4,
+            packages=[_package(scan_id=scan4, branch="4.0")],
+            patches=[],
+            findings=[_finding(scan_id=scan4, branch="4.0")],
+            branches=["4.0"],
+        )
+        package_branches = {
+            row["branch"] for row in conn.execute("SELECT branch FROM packages").fetchall()
+        }
+        finding_branches = {
+            row["branch"] for row in conn.execute("SELECT branch FROM findings").fetchall()
+        }
+        assert package_branches == {"3.0", "4.0"}
+        assert finding_branches == {"3.0", "4.0"}
+    finally:
+        conn.close()
+
+
 def test_scan_request_rejects_development_and_fasttrack_branches(client, admin):
     for branch in ("3.0-dev", "fasttrack/3.0", "4.0-dev", "fasttrack/4.0"):
         response = client.post("/api/scan", headers=admin, json={"branches": [branch]})
