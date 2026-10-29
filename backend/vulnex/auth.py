@@ -154,7 +154,7 @@ def google_exchange(code: str, redirect_uri: str) -> dict | None:
             _GOOGLE_USER,
             headers={
                 "Authorization": f"Bearer {access_token}",
-                "Accept": "application/vnd.google+json",
+                "Accept": "application/json",
                 "User-Agent": config.user_agent(),
             },
             timeout=config.HTTP_TIMEOUT,
