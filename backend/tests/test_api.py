@@ -220,15 +220,19 @@ def test_fixed_and_ruled_out_cves_are_not_served(client):
     assert stats["distinct_cves"] == 1
 
 
-def test_release_branch_filter_includes_legacy_3_0_snapshot_branches(client):
+def test_release_branch_filter_excludes_development_branches(client):
     findings = client.get("/api/findings", params={"branch": "3.0"}).json()
     packages = client.get("/api/packages", params={"branch": "3.0"}).json()
 
-    # Existing snapshots may have been collected from 3.0-dev and fasttrack/3.0.
-    # The user-facing 3.0 filter must still return those records.
-    assert findings["total"] == 1
-    assert findings["items"][0]["branch"] == "3.0-dev"
-    assert packages["total"] == 2
+    # Fixtures contain only 3.0-dev records. Stable 3.0 filters must not mix them in.
+    assert findings["total"] == 0
+    assert packages["total"] == 0
+
+
+def test_scan_request_rejects_development_and_fasttrack_branches(client, admin):
+    for branch in ("3.0-dev", "fasttrack/3.0", "4.0-dev", "fasttrack/4.0"):
+        response = client.post("/api/scan", headers=admin, json={"branches": [branch]})
+        assert response.status_code == 400
 
 
 def test_scan_request_uses_selected_fork_branch_and_ecosystem(client, admin, monkeypatch):
