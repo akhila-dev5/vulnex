@@ -228,8 +228,8 @@ function App() {
     if (!canWrite) return;
     setScanStatus("starting");
     try {
-      await request("/scan", { method: "POST", body: JSON.stringify({ branches: ["3.0"] }) }, token);
-      setScanStatus("running"); setToast("Official Azure Linux 3.0 scan started");
+      await request("/scan", { method: "POST", body: JSON.stringify({ branches: [branch] }) }, token);
+      setScanStatus("running"); setToast(`Azure Linux ${branch} scan started from azurelinux-test`);
     } catch (e) { setScanStatus("idle"); setToast(messageOf(e)); }
   };
 
@@ -301,7 +301,7 @@ function App() {
         <section className="table-card">
           <div className="table-head">
             <div><h2>{activeTab === "triage" ? "Triage queue" : activeTab === "affected" ? "Affected findings" : "Packages"}</h2><p>{total.toLocaleString()} result{total === 1 ? "" : "s"} · Azure Linux 3.0</p></div>
-            <div className="head-meta"><span><Clock3 size={14} /> {stats.last_scan?.finished_at ? new Date(stats.last_scan.finished_at).toLocaleString() : "Waiting for first scan"}</span><button className="icon-btn" onClick={runScan} disabled={!canWrite || branch !== "3.0" || scanStatus === "running"} title={branch === "3.0" ? "Run a 3.0 scan" : "Scanning is currently configured for branch 3.0 only"}><Activity size={16} /></button></div>
+            <div className="head-meta"><span><Clock3 size={14} /> {stats.last_scan?.finished_at ? new Date(stats.last_scan.finished_at).toLocaleString() : "Waiting for first scan"}</span><button className="icon-btn" onClick={runScan} disabled={!canWrite || scanStatus === "running"} title={`Scan branch ${branch} from azurelinux-test`}><Activity size={16} /></button></div>
           </div>
           {busy ? <div className="empty-state"><RefreshCw className="spin" /> Loading vulnerability records…</div>
           : activeTab === "packages" ? <div className="table-scroll"><table>
