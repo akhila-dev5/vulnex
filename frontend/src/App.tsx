@@ -25,6 +25,8 @@ type Finding = {
   patch_availability?: { ai_verdict?: string; patch_link?: string; available_since?: string };
 };
 type PageResult<T> = { items: T[]; total: number; page?: number; limit?: number };
+type DeepView = { cve_id?: string; package_name?: string; package_version?: string; branch?: string; spec_path?: string; spec_url?: string; tarball?: { name?: string; url?: string; available?: boolean | null } | null; affected_files?: Array<string | { path?: string; file?: string; url?: string; name?: string }>; backport_patches?: Array<{ filename?: string; url?: string; present?: boolean | null }>; notes?: string[] };
+type CveDetail = { cve_id?: string; findings?: Finding[]; enrichment?: { description?: string; published?: string; modified?: string; cvss_score?: number; severity?: string; references?: Array<{ url?: string; name?: string }> } | null; links?: Array<{ label: string; url: string }> };
 type Stats = {
   total_packages?: number; total_findings?: number; distinct_cves?: number;
   severity?: Record<string, number>; last_scan?: { finished_at?: string; started_at?: string; branches?: string };
@@ -72,6 +74,17 @@ function App() {
   const [activeTab, setActiveTab] = useState<"triage" | "affected" | "packages">("triage");
   const [expandedKey, setExpandedKey] = useState("");
   const [modal, setModal] = useState<"dispute" | "comment" | "patch" | "pr" | null>(null);
+  const [actionMenuKey, setActionMenuKey] = useState("");
+  const [deepTarget, setDeepTarget] = useState<Finding | null>(null);
+  const [deepData, setDeepData] = useState<DeepView | null>(null);
+  const [deepBusy, setDeepBusy] = useState(false);
+  const [deepError, setDeepError] = useState("");
+  const [detail, setDetail] = useState<CveDetail | null>(null);
+  const [detailBusy, setDetailBusy] = useState(false);
+  const [detailError, setDetailError] = useState("");
+  const [patchFilter, setPatchFilter] = useState("all");
+  const [triageFilter, setTriageFilter] = useState("all");
+  const [resolutionFilter, setResolutionFilter] = useState("all");
   const [target, setTarget] = useState<Finding | null>(null);
   const [formText, setFormText] = useState("");
   const [patchLink, setPatchLink] = useState("");
@@ -91,21 +104,27 @@ function App() {
     setError("");
     try {
       const nextStats = await request<Stats>("/stats", {}, token);
+      const params = new URLSearchParams({ search: query.trim(), branch, page: String(page), limit: "25" });
+      if (severity !== "all") params.set("severity", severity);
       const [findings, packages] = await Promise.all([
-        request<PageResult<Finding>>("/triage?" + new URLSearchParams({
-          search: query, page: String(page), limit: "25",
-        }).toString(), {}, token),
+        request<PageResult<Finding>>("/findings?" + params.toString(), {}, token),
         request<PageResult<{name: string; version?: string; branch?: string; spec_path?: string}>>("/packages?" + new URLSearchParams({
-          search: query, branch: "3.0", page: String(page), limit: "25",
+          search: query.trim(), branch, page: String(page), limit: "25",
         }).toString(), {}, token),
       ]);
       setStats(nextStats);
-      const filtered = severity === "all"
-        ? findings.items
-        : findings.items.filter(item => severityClass(item.severity) === severity);
-      const branchFiltered = filtered.filter(item => item.branch === "3.0");
-      setRows(activeTab === "packages" ? [] : branchFiltered);
-      setTotal(activeTab === "packages" ? packages.total : branchFiltered.length);
+      let visible = findings.items;
+      if (patchFilter !== "all") {
+        visible = visible.filter(item => {
+          const patch = item.patch_availability;
+          const available = Boolean(patch?.available);
+          return patchFilter === "available" ? available : patchFilter === "unavailable" ? patch?.applicable === true && !available : !patch?.applicable || patch?.ai_verdict === "Unknown";
+        });
+      }
+      if (triageFilter !== "all") visible = visible.filter(item => String(item.triage?.triage_status || "open").toLowerCase() === triageFilter);
+      if (resolutionFilter !== "all") visible = visible.filter(item => String(item.triage?.resolution_status || item.status || "").toLowerCase() === resolutionFilter);
+      setRows(activeTab === "packages" ? [] : visible);
+      setTotal(activeTab === "packages" ? packages.total : findings.total);
       setPackageRows(packages.items);
       setPackageTotal(packages.total);
     } catch (e) {
@@ -113,7 +132,7 @@ function App() {
     } finally {
       setBusy(false);
     }
-  }, [token, query, severity, branch, page, activeTab]);
+  }, [token, query, severity, branch, page, activeTab, patchFilter, triageFilter, resolutionFilter]);
 
   useEffect(() => {
     const handoff = window.location.hash.match(/vulnex_token=([A-Za-z0-9_-]+)/);
@@ -133,6 +152,25 @@ function App() {
   useEffect(() => { void load(); }, [load]);
 
   const refresh = () => { void load(); };
+
+  const openDeep = async (row: Finding) => {
+    setDeepTarget(row); setDeepData(null); setDeepError(""); setDeepBusy(true);
+    try {
+      const params = new URLSearchParams({ branch: row.branch || "", spec: row.spec_path || "" });
+      const data = await request<DeepView>(`/cves/${encodeURIComponent(row.cve_id)}/deep?${params.toString()}`, {}, token);
+      setDeepData(data);
+    } catch (e) { setDeepError(messageOf(e)); }
+    finally { setDeepBusy(false); }
+  };
+
+  const openDetail = async (cveId: string) => {
+    setDetail(null); setDetailError(""); setDetailBusy(true);
+    try {
+      const data = await request<CveDetail>(`/cves/${encodeURIComponent(cveId)}?enrich=false`, {}, token);
+      setDetail(data);
+    } catch (e) { setDetailError(messageOf(e)); }
+    finally { setDetailBusy(false); }
+  };
 
   const submitTriage = async () => {
     if (!target || !modal) return;
@@ -185,8 +223,8 @@ function App() {
           <StatusPill tone="good">Active</StatusPill>
         </div>
         <nav className="side-nav" aria-label="Main navigation">
-          <button className={activeTab === "triage" ? "active" : ""} onClick={() => { setActiveTab("triage"); setPage(1); }}><LayoutDashboard size={17} /> Dashboard & triage</button>
-          <button className={activeTab === "affected" ? "active" : ""} onClick={() => { setActiveTab("affected"); setPage(1); }}><ShieldAlert size={17} /> Affected findings</button>
+          <button className={activeTab === "triage" ? "active" : ""} onClick={() => { setActiveTab("triage"); setPage(1); }}><LayoutDashboard size={17} /> Dashboard</button>
+          <button className={activeTab === "affected" ? "active" : ""} onClick={() => { setActiveTab("affected"); setPage(1); }}><ShieldAlert size={17} /> CVEs / affected</button>
           <button className={activeTab === "packages" ? "active" : ""} onClick={() => { setActiveTab("packages"); setPage(1); }}><Package size={17} /> Packages</button>
         </nav>
         <div className="sidebar-bottom">
@@ -220,8 +258,12 @@ function App() {
         <section className="toolbar-panel">
           <div className="search-field"><Search size={17} /><input value={query} onChange={e => { setQuery(e.target.value); setPage(1); }} placeholder="Search CVE or package name…" aria-label="Search CVE or package name" /></div>
           <label className="filter-select"><Filter size={15} /><span>Severity</span><select value={severity} onChange={e => { setSeverity(e.target.value); setPage(1); }}><option value="all">All severities</option><option value="critical">Critical</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option><option value="unknown">Unknown</option></select></label>
-          <label className="filter-select"><SlidersHorizontal size={15} /><span>Branch</span><select value={branch} onChange={e => { setBranch(e.target.value); setPage(1); }}><option value="3.0">3.0</option></select></label>
-          <button className="btn secondary" onClick={refresh}><RefreshCw size={15} /> Apply filters</button>
+          <label className="filter-select"><SlidersHorizontal size={15} /><span>Branch</span><select value={branch} onChange={e => { setBranch(e.target.value); setPage(1); }}><option value="3.0">3.0</option><option value="4.0">4.0</option></select></label>
+          <label className="filter-select"><span>Patch</span><select value={patchFilter} onChange={e => { setPatchFilter(e.target.value); setPage(1); }}><option value="all">Any patch state</option><option value="available">Available</option><option value="unavailable">Not found</option><option value="unknown">Unknown</option></select></label>
+          <label className="filter-select"><span>Triage</span><select value={triageFilter} onChange={e => { setTriageFilter(e.target.value); setPage(1); }}><option value="all">Any triage</option><option value="open">Open</option><option value="in_progress">In progress</option><option value="triaged">Triaged</option><option value="disputed">Disputed</option></select></label>
+          <label className="filter-select"><span>Resolution</span><select value={resolutionFilter} onChange={e => { setResolutionFilter(e.target.value); setPage(1); }}><option value="all">Any resolution</option><option value="affected">Affected</option><option value="disputed">Disputed</option><option value="in_progress">In progress</option><option value="published">Published</option></select></label>
+          <button className="btn secondary" onClick={() => { setQuery(""); setSeverity("all"); setBranch("3.0"); setPatchFilter("all"); setTriageFilter("all"); setResolutionFilter("all"); setPage(1); }}><X size={15} /> Clear filters</button>
+          <button className="btn secondary" onClick={refresh}><RefreshCw size={15} /> Apply</button>
         </section>
 
         {error && <div className="alert error"><AlertCircle size={17} />{error}</div>}
@@ -243,25 +285,24 @@ function App() {
               const triage = row.triage || {};
               return <React.Fragment key={key}>
                 <tr>
-                  <td><button className="link-button" onClick={() => setExpandedKey(expandedKey === key ? "" : key)}><strong>{row.package_name || "Unknown package"}</strong><small>{row.package_version || row.cve_id}</small></button><a className="sub-link" href={`#/cve/${encodeURIComponent(row.cve_id)}`}>{row.cve_id} <ArrowUpRight size={12} /></a></td>
+                  <td><button className="link-button" onClick={() => void openDetail(row.cve_id)}><strong>{row.cve_id}</strong><small>{row.package_name || "Unknown package"} · {row.package_version || "version unavailable"}</small></button></td>
                   <td><code>{row.branch}</code></td><td><StatusPill tone={severityClass(row.severity)}>{row.severity || "Unknown"}</StatusPill></td>
-                  <td><StatusPill tone={String(row.patch_availability?.ai_verdict || "").toLowerCase().includes("available") ? "good" : "warning"}>{row.patch_availability?.ai_verdict || "Not analysed"}</StatusPill>{row.patch_availability?.patch_link && <a className="sub-link" href={row.patch_availability.patch_link} target="_blank" rel="noreferrer">Patch link <ArrowUpRight size={12} /></a>}</td>
+                  <td><StatusPill tone={row.patch_availability?.available ? "good" : row.patch_availability?.applicable === false ? "neutral" : "warning"}>{row.patch_availability?.available ? "Candidate found" : row.patch_availability?.applicable === false ? "Not applicable" : "Unknown"}</StatusPill>{row.patch_availability?.patch_link && <a className="sub-link" href={row.patch_availability.patch_link} target="_blank" rel="noopener noreferrer">Evidence link <ArrowUpRight size={12} /></a>}</td>
                   <td>{String(triage.triage_status || "Untriaged")}</td><td>{String(triage.resolution_status || row.status || "In progress")}</td><td>{String(triage.owner || "—")}</td>
                   <td><div className="action-wrap">
-                    <button className="btn action-btn" onClick={() => setExpandedKey(expandedKey === key ? "" : key)}><FileSearch size={14} /> Deep</button>
-                    <div className="action-menu">
-                      <button disabled={!canAdmin} onClick={() => openAction("pr", row)}><GitPullRequest size={14} /> Set GitHub PR</button>
-                      <button disabled={!canAdmin} onClick={() => openAction("patch", row)}><CheckCircle2 size={14} /> Patch verdict</button>
-                      <button disabled={!canAdmin} onClick={() => openAction("comment", row)}><Activity size={14} /> Add comment</button>
-                      <button disabled={!canAdmin} onClick={() => openAction("dispute", row)}><AlertTriangle size={14} /> Dispute</button>
-                    </div>
+                    <button className="btn action-btn" onClick={() => void openDeep(row)}><FileSearch size={14} /> Deep</button>
+                    <button className="btn action-btn" aria-expanded={actionMenuKey === key} onClick={() => setActionMenuKey(actionMenuKey === key ? "" : key)}>Actions <ChevronDown size={13} /></button>
+                    {actionMenuKey === key && <div className="action-popover" role="menu">
+                      <button role="menuitem" disabled={!canAdmin} onClick={() => { setActionMenuKey(""); openAction("pr", row); }}><GitPullRequest size={14} /> Set GitHub PR</button>
+                      <button role="menuitem" disabled={!canAdmin} onClick={() => { setActionMenuKey(""); openAction("dispute", row); }}><AlertTriangle size={14} /> Dispute</button>
+                    </div>}
                   </div></td>
                   <td><button className="icon-btn" onClick={() => setExpandedKey(expandedKey === key ? "" : key)} aria-label="Expand row">{expandedKey === key ? <ChevronDown size={16} /> : <ChevronRight size={16} />}</button></td>
                 </tr>
                 {expandedKey === key && <tr className="expanded"><td colSpan={9}>
                   <div className="expanded-grid">
-                    <div><small>AI verdict</small><strong>{row.patch_availability?.ai_verdict || "No verdict recorded"}</strong><small>Source package specification</small><a href={`https://github.com/akhila-dev5/azurelinux-test/blob/3.0/${row.spec_path}`} target="_blank" rel="noreferrer">{row.spec_path || "Not available"}</a></div>
-                    <div><small>Finding</small><strong>{row.cve_id}</strong><p>{row.description || "The source does not provide a description for this finding."}</p><small>Patch link</small>{row.patch_availability?.patch_link ? <a href={row.patch_availability.patch_link} target="_blank" rel="noreferrer">{row.patch_availability.patch_link}</a> : "No patch link found in current record."}</div>
+                    <div><small>Patch evidence</small><strong>{row.patch_availability?.available ? "Candidate patch link found — not independently verified" : "Insufficient evidence to confirm a patch"}</strong><small>Source package specification</small>{row.spec_path ? <a href={`https://github.com/akhila-dev5/azurelinux-test/blob/${encodeURIComponent(row.branch)}/${row.spec_path}`} target="_blank" rel="noopener noreferrer">{row.spec_path}</a> : <span>Not available</span>}</div>
+                    <div><small>Finding</small><strong>{row.cve_id}</strong><p>{row.description || "The approved source does not provide a description for this finding."}</p><small>Recorded patch result</small>{row.patch_availability?.patch_link ? <a href={row.patch_availability.patch_link} target="_blank" rel="noopener noreferrer">{row.patch_availability.patch_link}</a> : <span>Not recorded</span>}</div>
                   </div>
                 </td></tr>}
               </React.Fragment>;
@@ -271,6 +312,31 @@ function App() {
         </section>
       </main>
 
+      {(deepTarget || detailBusy || detail || detailError) && <div className="modal-backdrop" role="presentation" onClick={e => { if (e.target === e.currentTarget) { setDeepTarget(null); setDetail(null); setDetailError(""); } }}>
+        <section className="modal-card wide-modal" role="dialog" aria-modal="true" aria-labelledby="detail-modal-title">
+          <button className="modal-close icon-btn" aria-label="Close" onClick={() => { setDeepTarget(null); setDeepData(null); setDetail(null); setDetailError(""); }}><X size={16} /></button>
+          {deepTarget ? <>
+            <small>DEEP INSPECTION · {deepTarget.branch}</small><h2 id="detail-modal-title">{deepTarget.cve_id} · {deepTarget.package_name}</h2>
+            {deepBusy ? <div className="empty-state"><RefreshCw className="spin" /> Loading affected-file evidence…</div>
+              : deepError ? <div className="alert error"><AlertCircle size={16} />{deepError}<button className="btn secondary" onClick={() => void openDeep(deepTarget)}>Retry</button></div>
+              : <div className="detail-sections">
+                <section><h3>Affected files</h3>{deepData?.affected_files?.length ? <div className="evidence-list">{deepData.affected_files.map((file, i) => { const path = typeof file === "string" ? file : (file.path || file.file || file.name || "Path not available"); const url = typeof file === "string" ? "" : file.url || ""; return <div key={path + i}><code>{path}</code>{url && <a href={url} target="_blank" rel="noopener noreferrer">Source evidence <ArrowUpRight size={12} /></a>}</div>; })}</div> : <p className="muted">No affected-file information available from the recorded source evidence.</p>}</section>
+                <section><h3>Source artifact</h3>{deepData?.tarball?.name ? <div><strong>{deepData.tarball.name}</strong>{deepData.tarball.url && <p><a href={deepData.tarball.url} target="_blank" rel="noopener noreferrer">Open source tarball <ArrowUpRight size={12} /></a></p>}<small>Availability: {deepData.tarball.available == null ? "Unknown" : deepData.tarball.available ? "Available" : "Not available"}</small></div> : <p className="muted">No source tarball recorded.</p>}</section>
+                <section><h3>Backport patches</h3>{deepData?.backport_patches?.length ? deepData.backport_patches.map((p, i) => <div className="evidence-row" key={p.filename || i}><span>{p.filename || "Patch file"}</span>{p.url ? <a href={p.url} target="_blank" rel="noopener noreferrer">View source <ArrowUpRight size={12} /></a> : <span>Link unavailable</span>}</div>) : <p className="muted">No backport patch file recorded.</p>}</section>
+                {deepData?.notes?.length ? <section><h3>Evidence notes</h3><ul>{deepData.notes.map((note, i) => <li key={i}>{note}</li>)}</ul></section> : null}
+              </div>}
+          </> : <>
+            <small>VULNEX CVE RECORD</small><h2 id="detail-modal-title">{detail?.cve_id || "CVE details"}</h2>
+            {detailBusy ? <div className="empty-state"><RefreshCw className="spin" /> Loading CVE details…</div>
+              : detailError ? <div className="alert error"><AlertCircle size={16} />{detailError}</div>
+              : <div className="detail-sections">
+                <section><h3>Severity and description</h3>{detail?.findings?.map((f, i) => <div className="evidence-row" key={f.spec_path || i}><span><StatusPill tone={severityClass(f.severity)}>{f.severity || "Unknown"}{f.cvss_score != null ? ` · ${f.cvss_score}` : ""}</StatusPill><strong>{f.package_name} {f.package_version || ""}</strong></span><code>{f.branch}</code></div>)}<p>{detail?.enrichment?.description || detail?.findings?.[0]?.description || "Description not available from the approved source."}</p></section>
+                <section><h3>External references</h3><div className="evidence-list">{(detail?.links || []).map(link => <div key={link.label}><span>{link.label}</span><a href={link.url} target="_blank" rel="noopener noreferrer">Open reference <ArrowUpRight size={12} /></a></div>)}</div></section>
+                <section><h3>Patch evidence</h3>{detail?.findings?.map((f, i) => <div key={f.spec_path || i} className="evidence-row"><span>{f.package_name} · {f.branch}</span>{f.patch_availability?.patch_link ? <a href={f.patch_availability.patch_link} target="_blank" rel="noopener noreferrer">Open recorded link <ArrowUpRight size={12} /></a> : <span className="muted">No link recorded</span>}</div>)}</section>
+              </div>}
+          </>}
+        </section>
+      </div>}
       {modal && target && <div className="modal-backdrop" role="presentation" onClick={e => { if (e.target === e.currentTarget) setModal(null); }}>
         <section className="modal-card" role="dialog" aria-modal="true" aria-labelledby="modal-title">
           <button className="modal-close icon-btn" aria-label="Close" onClick={() => setModal(null)}><X size={16} /></button>
