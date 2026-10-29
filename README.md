@@ -45,7 +45,7 @@ Python 3.11+ · FastAPI · SQLite · React + TypeScript + Vite · GitHub Actions
 
 ## What it does
 
-- **Scans the official Azure Linux 3.0 release branch.** The only source repository is
+- **Scans only the configured fork.** The only source repository is
   `akhila-dev5/azurelinux-test`, with the selected branch controlling the scan. The scanner parses the live `.spec` tree through GitHub's tree API — package
   name, version, release, epoch, `.spec` path, source tarball URLs and `Patch:` entries.
   Nothing is hard-coded; `data/vulnex.db` is the persisted scan snapshot.
@@ -184,7 +184,7 @@ on both branches, so branch is always part of the key.
 ### 2. Version-range matching with real RPM semantics
 
 OSV publishes the official Microsoft Azure Linux advisory database under the ecosystem
-**`Azure Linux:3`**, imported from `microsoft/AzureLinuxVulnerabilityData`. Its
+**`Azure Linux:3`**, imported from the configured advisory ecosystem. Its
 advisories (`AZL-####`) carry RPM `fixed` / `last_affected` boundaries:
 
 ```json
@@ -644,7 +644,7 @@ A discovered upstream commit or patch-looking reference is **candidate evidence*
 ### Current deployment limitations
 
 - The current persistence layer remains SQLite. PostgreSQL support and a migration path have not been implemented in this change; do not describe this deployment as using PostgreSQL.
-- The scanner is currently configured to scan Azure Linux branch `3.0`. The branch selector also exposes `4.0`, but the UI labels it as not scanned and disables the scan action for that branch until scanning support is configured.
+- The scanner uses only `akhila-dev5/azurelinux-test`. Branches `3.0` and `4.0` are selectable and the selected branch is passed to the scan request.
 - Affected-file details are limited to paths and artifacts present in the stored scan/source evidence. The dashboard displays an explicit empty state when that evidence is missing.
 - Google OAuth credentials must remain server-side in Render environment variables. The client redirect URI must match `/api/auth/google/callback` exactly.
 
@@ -660,4 +660,4 @@ before pagination.
 
 ## Fresh scan behavior
 
-The admin **Scan Now** action scans `akhila-dev5/azurelinux-test` using the configured branch. The default branch is `3.0`; `4.0` can be selected and scanned from this same fork. The UI polls scan status and reloads findings and packages when the scan finishes.
+The admin **Scan Now** action scans the selected branch of `akhila-dev5/azurelinux-test` in a background thread. The UI polls scan status and reloads findings and packages when the scan finishes.
