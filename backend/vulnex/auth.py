@@ -35,9 +35,9 @@ __all__ = [
     "google_login_allowed",
 ]
 
-_GOOGLE_AUTHORIZE = "https://google.com/login/oauth/authorize"
-_GOOGLE_TOKEN = "https://google.com/login/oauth/access_token"
-_GOOGLE_USER = "https://api.google.com/user"
+_GOOGLE_AUTHORIZE = "https://accounts.google.com/o/oauth2/v2/auth"
+_GOOGLE_TOKEN = "https://oauth2.googleapis.com/token"
+_GOOGLE_USER = "https://openidconnect.googleapis.com/v1/userinfo"
 
 
 # -- sessions ---------------------------------------------------------------
