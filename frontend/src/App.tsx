@@ -150,6 +150,24 @@ function App() {
 
   useEffect(() => { void load(); }, [load]);
 
+  // Poll a background scan and reload the live snapshot as soon as it finishes.
+  useEffect(() => {
+    if (scanStatus !== "running") return;
+    const timer = window.setInterval(async () => {
+      try {
+        const status = await request<{ manager?: { running?: boolean; error?: string } }>("/scan/status", {}, token);
+        if (status.manager?.running) return;
+        setScanStatus("idle");
+        if (status.manager?.error) setToast("Scan failed: " + status.manager.error);
+        else setToast("Scan completed; findings refreshed");
+        await load();
+      } catch (e) {
+        setToast("Could not check scan status: " + messageOf(e));
+      }
+    }, 5000);
+    return () => window.clearInterval(timer);
+  }, [scanStatus, token, load]);
+
   const refresh = () => { void load(); };
 
   const toggleExpanded = async (row: Finding, key: string) => {
@@ -211,7 +229,7 @@ function App() {
     setScanStatus("starting");
     try {
       await request("/scan", { method: "POST", body: JSON.stringify({ branches: ["3.0"] }) }, token);
-      setScanStatus("running"); setToast("Azure Linux 3.0 scan started");
+      setScanStatus("running"); setToast("Official Azure Linux 3.0 scan started");
     } catch (e) { setScanStatus("idle"); setToast(messageOf(e)); }
   };
 
@@ -272,7 +290,7 @@ function App() {
           <div className="search-field"><Search size={17} /><input value={query} onChange={e => { setQuery(e.target.value); setPage(1); }} placeholder="Search CVE or package name…" aria-label="Search CVE or package name" /></div>
           <label className="filter-select"><Filter size={15} /><span>Severity</span><select value={severity} onChange={e => { setSeverity(e.target.value); setPage(1); }}><option value="all">All severities</option><option value="critical">Critical</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option><option value="unknown">Unknown</option></select></label>
           <label className="filter-select"><SlidersHorizontal size={15} /><span>Branch</span><select value={branch} onChange={e => { setBranch(e.target.value); setPage(1); }}><option value="3.0">3.0</option><option value="4.0">4.0</option></select></label>
-          <label className="filter-select"><span>Patch</span><select value={patchFilter} onChange={e => { setPatchFilter(e.target.value); setPage(1); }}><option value="all">Any patch state</option><option value="available">Candidate found</option><option value="unknown">Unknown / insufficient evidence</option></select></label>
+          <label className="filter-select"><span>Patch</span><select value={patchFilter} onChange={e => { setPatchFilter(e.target.value); setPage(1); }}><option value="all">Any patch state</option><option value="available">Patch available</option><option value="unavailable">Patch not available</option></select></label>
           <label className="filter-select"><span>Triage</span><select value={triageFilter} onChange={e => { setTriageFilter(e.target.value); setPage(1); }}><option value="all">Any triage</option><option value="open">Open</option><option value="in_progress">In progress</option><option value="triaged">Triaged</option><option value="disputed">Disputed</option></select></label>
           <label className="filter-select"><span>Resolution</span><select value={resolutionFilter} onChange={e => { setResolutionFilter(e.target.value); setPage(1); }}><option value="all">Any resolution</option><option value="affected">Affected</option><option value="disputed">Disputed</option><option value="in_progress">In progress</option><option value="published">Published</option></select></label>
           <button className="btn secondary" onClick={() => { setQuery(""); setSeverity("all"); setBranch("3.0"); setPatchFilter("all"); setTriageFilter("all"); setResolutionFilter("all"); setPage(1); }}><X size={15} /> Clear filters</button>
