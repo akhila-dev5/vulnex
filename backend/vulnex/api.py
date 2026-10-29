@@ -388,26 +388,81 @@ def get_findings(
     branch: str = "",
     page: int = 1,
     limit: int = Query(100, ge=1, le=1000),
+    patch_state: str = "",
+    triage_status: str = "",
+    resolution_status: str = "",
+    owner: str = "",
+    fixed_version: str = "",
 ) -> dict:
-    """Open exposures only.
+    """List open exposures with source-backed filters and persisted triage metadata.
 
-    There is deliberately no ``status`` filter: the site only ever serves
-    findings that are still ``affected``, never the CVEs this distro has already
-    fixed or ruled out. A stray ``?status=`` is simply ignored.
+    Patch filters describe whether a candidate patch reference was found. They
+    do not assert that a patch is verified or that a fix has shipped.
     """
+    extra_filters = any((patch_state, triage_status, resolution_status, owner, fixed_version))
     with db.session() as conn:
-        rows, total = db.list_findings(
-            conn,
-            status=config.OPEN_STATUS,
-            severity=severity,
-            search=search,
-            package=package,
-            branch=branch,
-            limit=limit,
-            offset=(page - 1) * limit,
-        )
-        _decorate_findings(conn, rows)
-    return {"items": rows, "total": total, "page": page, "limit": limit}
+        if not extra_filters:
+            rows, total = db.list_findings(
+                conn,
+                status=config.OPEN_STATUS,
+                severity=severity,
+                search=search,
+                package=package,
+                branch=branch,
+                limit=limit,
+                offset=(page - 1) * limit,
+            )
+            _decorate_findings(conn, rows)
+            return {"items": rows, "total": total, "page": page, "limit": limit}
+
+        # Workflow and patch evidence are derived after joining persisted triage
+        # data, so apply these filters before pagination rather than filtering a
+        # single page in the browser.
+        candidates: list[dict] = []
+        offset = 0
+        batch_size = 1000
+        while True:
+            batch, source_total = db.list_findings(
+                conn,
+                status=config.OPEN_STATUS,
+                severity=severity,
+                search=search,
+                package=package,
+                branch=branch,
+                limit=batch_size,
+                offset=offset,
+            )
+            if not batch:
+                break
+            _decorate_findings(conn, batch)
+            candidates.extend(batch)
+            offset += len(batch)
+            if offset >= source_total:
+                break
+
+        filtered = []
+        for finding in candidates:
+            triage_record = finding.get("triage") or {}
+            patch = finding.get("patch_availability") or {}
+            if triage_status and str(triage_record.get("triage_status") or "open").lower() != triage_status.lower():
+                continue
+            if resolution_status and str(triage_record.get("resolution_status") or finding.get("status") or "").lower() != resolution_status.lower():
+                continue
+            if owner and owner.lower() not in str(triage_record.get("owner") or "").lower():
+                continue
+            if fixed_version and fixed_version.lower() not in str(finding.get("fixed_version") or "").lower():
+                continue
+            if patch_state == "available" and not patch.get("available"):
+                continue
+            if patch_state == "unavailable" and (not patch.get("applicable") or patch.get("available")):
+                continue
+            if patch_state == "unknown" and patch.get("applicable") is not False:
+                continue
+            filtered.append(finding)
+
+        total = len(filtered)
+        start_at = max(page - 1, 0) * limit
+        return {"items": filtered[start_at:start_at + limit], "total": total, "page": page, "limit": limit}
 
 
 @app.get("/api/cves/{cve_id}")
