@@ -140,7 +140,7 @@ def test_google_callback_allows_only_the_admin_login(client, monkeypatch):
     monkeypatch.setattr(auth, "google_exchange", lambda code, uri: {"email": "someone-else@example.com", "email_verified": True})
     start = client.get("/api/auth/google", follow_redirects=False)
     assert start.status_code == 307
-    assert "google.com/login/oauth/authorize" in start.headers["location"]
+    assert "accounts.google.com/o/oauth2/v2/auth" in start.headers["location"]
     assert "client_id=cid" in start.headers["location"]
     state = start.headers["location"].split("state=")[1].split("&")[0]
     denied = client.get(
@@ -178,7 +178,7 @@ def test_viewer_cannot_write_anything(client):
         "/api/triage/dispute", json={**FINDING, "reason": "wrong"}
     ).status_code == 401
     assert client.post(
-        "/api/triage/google-pr", json={**FINDING, "number": "1"}
+        "/api/triage/github-pr", json={**FINDING, "number": "1"}
     ).status_code == 401
     assert client.post(
         "/api/triage/patch", json={**FINDING, "final_verdict": "No Patch Found"}
