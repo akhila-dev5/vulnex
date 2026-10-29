@@ -798,10 +798,17 @@ def add_assignment_comment(
 def start_scan(request: Request, payload: ScanRequest | None = None) -> JSONResponse:
     require_admin(request)
     payload = payload or ScanRequest()
+    requested_branches = payload.branches or ["3.0"]
+    allowed_branches = {"3.0", "4.0", "3.0-dev", "4.0-dev", "fasttrack/3.0", "fasttrack/4.0"}
+    invalid_branches = sorted(set(requested_branches) - allowed_branches)
+    if invalid_branches:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported branch(es): {', '.join(invalid_branches)}. Choose a branch from azurelinux-test.",
+        )
     options = ScanOptions(
-        # Scan only the selected release within the configured azurelinux-test fork. Do not
-        # scan the repository's default branch or mix in 3.0-dev/fasttrack.
-        branches=["3.0"],
+        # The configured source is always the user's azurelinux-test fork.
+        branches=requested_branches,
         packages=set(payload.packages) if payload.packages else None,
         limit=payload.limit,
         verify_blobs=payload.verify_blobs,
