@@ -206,6 +206,13 @@ def test_admin_can_comment_and_dispute(client, admin):
     assert dispute.json()["comment"]["kind"] == "dispute"
     assert dispute.json()["triage"]["triage_status"] == "disputed"
 
+    history = client.get(
+        "/api/triage/comments",
+        params={**FINDING},
+    )
+    assert history.status_code == 200
+    assert [entry["kind"] for entry in history.json()["items"]] == ["comment", "dispute"]
+
     # Both entries land in the triage trail, the dispute reason under it.
     row = client.get("/api/triage", params={"status": "affected"}).json()["items"][0]
     bodies = [c["body"] for c in row["comments"]]
@@ -225,6 +232,30 @@ def test_admin_can_override_the_patch_verdict(client, admin):
     assert row["triage"]["final_verdict"] == "Patch Available"
     assert row["patch_availability"]["final_verdict"] == "Patch Available"
     assert row["patch_availability"]["overridden"] is True
+
+
+def test_github_pr_association_rejects_mismatched_or_external_urls(client, admin):
+    invalid = client.post(
+        "/api/triage/github-pr",
+        headers=admin,
+        json={**FINDING, "number": "12", "url": "https://example.com/pull/12"},
+    )
+    assert invalid.status_code == 400
+
+    mismatched = client.post(
+        "/api/triage/github-pr",
+        headers=admin,
+        json={**FINDING, "number": "12", "url": "https://github.com/owner/repo/pull/13"},
+    )
+    assert mismatched.status_code == 400
+
+    valid = client.post(
+        "/api/triage/github-pr",
+        headers=admin,
+        json={**FINDING, "number": "12", "url": "https://github.com/owner/repo/pull/12"},
+    )
+    assert valid.status_code == 200
+    assert valid.json()["triage"]["github_pr_url"] == "https://github.com/owner/repo/pull/12"
 
 
 def test_dispute_and_comment_need_content(client, admin):
