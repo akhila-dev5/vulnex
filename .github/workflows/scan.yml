@@ -9,7 +9,7 @@ on:
     inputs:
       branches:
         description: "Branches from akhila-dev5/azurelinux-test to scan (3.0 or 4.0)"
-        default: "3.0"
+        default: "3.0,4.0"
       enrich_limit:
         description: "Max CVEs to enrich from NVD/MITRE/Red Hat/GHSA"
         default: "400"
@@ -63,11 +63,13 @@ jobs:
           NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
           VULNEX_REPO_OWNER: akhila-dev5
           VULNEX_REPO_NAME: azurelinux-test
-          VULNEX_BRANCHES: ${{ github.event.inputs.branches || '3.0' }}
+          VULNEX_BRANCHES: ${{ github.event.inputs.branches || '3.0,4.0' }}
         run: |
-          python -m vulnex.cli scan \
-            --branches "${VULNEX_BRANCHES}" \
-            --enrich-limit "${{ github.event.inputs.enrich_limit || '400' }}"
+          for branch in ${VULNEX_BRANCHES//,/ }; do
+            python -m vulnex.cli scan \
+              --branches "${branch}" \
+              --enrich-limit "${{ github.event.inputs.enrich_limit || '400' }}"
+          done
 
       - name: Print snapshot summary
         working-directory: backend
