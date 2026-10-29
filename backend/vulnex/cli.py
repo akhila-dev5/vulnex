@@ -27,7 +27,10 @@ def _cmd_scan(args: argparse.Namespace) -> int:
         branches=branches,
         packages=packages,
         limit=args.limit,
-        ecosystem=args.ecosystem,
+        ecosystem=args.ecosystem or (
+            "Azure Linux:4" if all(b.startswith("4.0") or b.startswith("fasttrack/4.0") for b in branches)
+            else "Azure Linux:3"
+        ),
         include_extended=args.include_extended,
         verify_blobs=not args.no_blobs,
         corroborate=not args.no_corroborate,
@@ -115,10 +118,10 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", required=True)
 
     def add_scan(p: argparse.ArgumentParser) -> None:
-        p.add_argument("--branches", default="3.0", help="Azure Linux branch to scan (fixed to 3.0 in Vulnex)")
+        p.add_argument("--branches", default="3.0", help="Comma-separated branch names from akhila-dev5/azurelinux-test")
         p.add_argument("--packages", default="", help="Comma-separated package allow-list")
         p.add_argument("--limit", type=int, default=0, help="Max specs to scan (0 = all)")
-        p.add_argument("--ecosystem", default=config.OSV_ECOSYSTEM)
+        p.add_argument("--ecosystem", default=None, help="Override advisory ecosystem; inferred from selected branch by default")
         p.add_argument("--owner", default=None)
         p.add_argument("--repo", default=None)
         p.add_argument("--db", default=None)
