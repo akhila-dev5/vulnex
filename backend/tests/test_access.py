@@ -19,7 +19,7 @@ from vulnex.api import app
 AUTOMATION_KEY = "test-automation-key"
 AUTO = {"X-VULNEX-Key": AUTOMATION_KEY}
 KEY_HEADER = "X-VULNEX-Key"
-GOOGLE_LOGIN = "akhila-dev5"
+ADMIN_EMAIL = "gurujuakhila.dev@gmail.com"
 
 FINDING = {"cve_id": "CVE-2024-0500", "branch": "3.0-dev",
            "spec_path": "SPECS/demo/demo.spec"}
@@ -82,7 +82,7 @@ def test_admin_session_unlocks_triage(client, admin):
 def test_role_endpoint_advertises_only_google(client):
     data = client.get("/api/role").json()
     assert data["role"] == "viewer"
-    assert data["methods"] == {"google": False, "google_login": GOOGLE_LOGIN}
+    assert data["methods"] == {"google": False, "google_email": ADMIN_EMAIL}
 
 
 def test_automation_key_can_only_set_the_pr(client):
@@ -154,7 +154,7 @@ def test_google_callback_allows_only_the_admin_login(client, monkeypatch):
 def test_google_callback_mints_a_session_for_the_admin(client, monkeypatch):
     monkeypatch.setattr(config, "GOOGLE_OAUTH_CLIENT_ID", "cid")
     monkeypatch.setattr(config, "GOOGLE_OAUTH_CLIENT_SECRET", "secret")
-    monkeypatch.setattr(auth, "google_exchange", lambda code, uri: {"login": GOOGLE_LOGIN})
+    monkeypatch.setattr(auth, "google_exchange", lambda code, uri: {"email": ADMIN_EMAIL, "email_verified": True})
     start = client.get("/api/auth/google", follow_redirects=False)
     state = start.headers["location"].split("state=")[1].split("&")[0]
     done = client.get(
