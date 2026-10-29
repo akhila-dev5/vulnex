@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
-  Activity, AlertCircle, AlertTriangle, ArrowUpRight, Bell, CheckCircle2,
-  ChevronDown, ChevronRight, CircleHelp, Clock3, FileSearch, Filter, GitPullRequest,
+  Activity, AlertCircle, AlertTriangle, ArrowUpRight, CheckCircle2,
+  ChevronDown, ChevronRight, Clock3, FileSearch, Filter, GitPullRequest,
   LayoutDashboard, LogIn, LogOut, Package, RefreshCw, Search, ShieldCheck,
   SlidersHorizontal, ShieldAlert, X,
 } from "lucide-react";
@@ -81,6 +81,8 @@ function App() {
   const [prNumber, setPrNumber] = useState("");
   const [prUrl, setPrUrl] = useState("");
   const [scanStatus, setScanStatus] = useState("idle");
+  const [packageRows, setPackageRows] = useState<Array<{name: string; version?: string; branch?: string; spec_path?: string}>>([]);
+  const [packageTotal, setPackageTotal] = useState(0);
 
   const canAdmin = roleInfo.role === "admin";
   const canWrite = Boolean(roleInfo.write_enabled && canAdmin);
@@ -89,19 +91,24 @@ function App() {
     setBusy(true);
     setError("");
     try {
-      const [nextStats, findings] = await Promise.all([
-        request<Stats>("/stats", {}, token),
+      const nextStats = await request<Stats>("/stats", {}, token);
+      const [findings, packages] = await Promise.all([
         request<PageResult<Finding>>("/triage?" + new URLSearchParams({
           search: query, page: String(page), limit: "25",
+        }).toString(), {}, token),
+        request<PageResult<{name: string; version?: string; branch?: string; spec_path?: string}>>("/packages?" + new URLSearchParams({
+          search: query, branch: "3.0", page: String(page), limit: "25",
         }).toString(), {}, token),
       ]);
       setStats(nextStats);
       const filtered = severity === "all"
         ? findings.items
         : findings.items.filter(item => severityClass(item.severity) === severity);
-      const branchFiltered = filtered.filter(item => !branch || item.branch === branch);
+      const branchFiltered = filtered.filter(item => item.branch === "3.0");
       setRows(activeTab === "packages" ? [] : branchFiltered);
-      setTotal(activeTab === "packages" ? 0 : (severity === "all" && branch === "3.0" ? findings.total : branchFiltered.length));
+      setTotal(activeTab === "packages" ? packages.total : (severity === "all" ? findings.total : branchFiltered.length));
+      setPackageRows(packages.items);
+      setPackageTotal(packages.total);
     } catch (e) {
       setError(messageOf(e));
     } finally {
@@ -114,7 +121,7 @@ function App() {
     if (handoff) {
       const newToken = handoff[1];
       setToken(newToken);
-      window.history.replaceState(null, "", window.location.pathname + window.location.search + "#/");
+      window.history.replaceState(null, "", window.location.pathname + window.location.search);
       void request<RoleInfo>("/role", {}, newToken).then(setRoleInfo).catch(() => setRoleInfo({ role: "viewer" }));
       return;
     }
@@ -126,7 +133,6 @@ function App() {
 
   useEffect(() => { void load(); }, [load]);
 
-  const branches = useMemo(() => ["3.0"], []);
   const refresh = () => { void load(); };
 
   const submitTriage = async () => {
@@ -226,7 +232,10 @@ function App() {
             <div className="head-meta"><span><Clock3 size={14} /> {stats.last_scan?.finished_at ? new Date(stats.last_scan.finished_at).toLocaleString() : "Waiting for first scan"}</span><button className="icon-btn" onClick={runScan} disabled={!canWrite || scanStatus === "running"} title="Run a 3.0 scan"><Activity size={16} /></button></div>
           </div>
           {busy ? <div className="empty-state"><RefreshCw className="spin" /> Loading vulnerability records…</div>
-          : activeTab === "packages" ? <div className="empty-state">Package inventory is available from the API. Choose Dashboard & triage to inspect findings.</div>
+          : activeTab === "packages" ? <div className="table-scroll"><table>
+            <thead><tr><th>Package</th><th>Version</th><th>Branch</th><th>Spec path</th></tr></thead>
+            <tbody>{packageRows.map((pkg, index) => <tr key={pkg.spec_path || pkg.name + index}><td><strong>{pkg.name}</strong></td><td>{pkg.version || "—"}</td><td><code>{pkg.branch || "3.0"}</code></td><td className="spec-path">{pkg.spec_path || "—"}</td></tr>)}</tbody>
+          </table></div>
           : rows.length === 0 ? <div className="empty-state"><FileSearch size={26} /><strong>No findings in this view</strong><span>Try another search or run a fresh scan for branch 3.0.</span></div>
           : <div className="table-scroll"><table>
             <thead><tr><th>Vulnerability / package</th><th>Branch</th><th>Severity</th><th>Patch availability</th><th>Triage status</th><th>Resolution</th><th>Owner</th><th>Actions</th><th /></tr></thead>
@@ -259,7 +268,7 @@ function App() {
               </tbody>;
             })}</tbody>
           </table></div>}
-          <div className="pagination"><span>Page {page} · {total.toLocaleString()} rows</span><div><button className="btn secondary" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page <= 1 || busy}>Previous</button><button className="btn secondary" onClick={() => setPage(p => p + 1)} disabled={busy || rows.length < 25}>Next</button></div></div>
+          <div className="pagination"><span>Page {page} · {(activeTab === "packages" ? packageTotal : total).toLocaleString()} rows</span><div><button className="btn secondary" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page <= 1 || busy}>Previous</button><button className="btn secondary" onClick={() => setPage(p => p + 1)} disabled={busy || (activeTab === "packages" ? packageRows.length < 25 : rows.length < 25)}>Next</button></div></div>
         </section>
       </main>
 
