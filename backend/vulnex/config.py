@@ -134,6 +134,8 @@ def identity_for(role: str) -> dict:
     return {"identity": "anonymous", "email": "", "kind": "viewer"}
 
 # Endpoints ----------------------------------------------------------------
+ALLOWED_ORIGINS = [origin.strip() for origin in os.environ.get("VULNEX_ALLOWED_ORIGINS", "").split(",") if origin.strip()]
+
 GITHUB_API = "https://api.github.com"
 GITHUB_RAW = "https://raw.githubusercontent.com"
 OSV_API = "https://api.osv.dev/v1"
