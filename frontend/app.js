@@ -6,7 +6,7 @@
 const API = "/api";
 
 // Set by the GitHub Pages build (vulnex export); null for the live API.
-const STATIC = window.Vulnex_STATIC || null;
+const STATIC = window.VULNEX_STATIC || null;
 // The exported snapshot has no backend, so it is always the read-only tier.
 const STATIC_ROLE = (STATIC && STATIC.role) || null;
 // Holds the admin session token (or the automation key) — never a password.
