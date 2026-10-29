@@ -25,7 +25,7 @@ REPO_OWNER = os.environ.get("VULNEX_REPO_OWNER", "akhila-dev5")
 REPO_NAME = os.environ.get("VULNEX_REPO_NAME", "azurelinux-test")
 DEFAULT_BRANCHES = [
     b.strip()
-    for b in os.environ.get("VULNEX_BRANCHES", "3.0").split(",")
+    for b in os.environ.get("VULNEX_BRANCHES", "3.0,4.0").split(",")
     if b.strip()
 ]
 
