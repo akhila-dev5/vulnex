@@ -355,10 +355,15 @@ def _decorate_findings(
     enrichment: dict | None = None,
 ) -> list[dict]:
     """Attach triage state, patch availability, links and the Deep view."""
+    assignments = {
+        (item.get("cve_id"), item.get("package_name")): item
+        for item in db.list_assignments(conn)
+    }
     for finding in findings:
         finding["triage"] = db.get_triage(
             conn, finding["cve_id"], finding.get("branch", ""), finding.get("spec_path", "")
         )
+        finding["assignment"] = assignments.get((finding.get("cve_id"), finding.get("package_name")))
         triage.decorate_finding(finding, package, enrichment)
     return findings
 
