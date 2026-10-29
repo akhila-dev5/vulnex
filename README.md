@@ -9,7 +9,7 @@ exploitable, not a keyword soup.
 It runs entirely on free infrastructure: public vulnerability data, SQLite, a
 dependency-light FastAPI service, a build-free frontend, GitHub Actions for the
 scheduled scan, GitHub Pages for the read-only static snapshot, and a Render free
-web service for the live console (API + admin GitHub sign-in).
+web service for the live console (API + admin Google sign-in restricted to `gurujuakhila.dev@gmail.com`).
 
 ```
 Python 3.11+ · FastAPI · SQLite · React + TypeScript + Vite · GitHub Actions
@@ -373,7 +373,7 @@ vulnex export   Write the static GitHub Pages dashboard + JSON snapshot (--out)
 | `GET` | `/api/triage` | Every finding's baked triage view (status, resolution, owner, PR, patch verdict) |
 | `GET` | `/api/role` | Access tier (`viewer` / `admin` / `automation`), granted capabilities and which sign-in methods are configured |
 | `POST` | `/api/auth/logout` | Drop the caller's session token |
-| `GET` | `/api/auth/github` | Start GitHub sign-in (302 to GitHub; `503` when no OAuth app is configured) |
+| `GET` | `/api/auth/github` | Start Google sign-in (302 to GitHub; `503` when no OAuth app is configured) |
 | `GET` | `/api/auth/github/callback` | Finish GitHub sign-in for the allow-listed account and redirect back with `#vulnex_token=…` |
 | `POST` | `/api/triage/comment` | Admin only — add a triage comment to a finding (`cve_id`, `branch`, `spec_path`, `body`) |
 | `POST` | `/api/triage/dispute` | Admin only — raise a dispute (`reason`) and move the finding to `in_progress` |
