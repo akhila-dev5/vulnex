@@ -459,7 +459,7 @@ def get_findings(
         while True:
             batch, source_total = db.list_findings(
                 conn,
-                status=config.OPEN_STATUS,
+                status=status,
                 severity=severity,
                 search=search,
                 package=package,
