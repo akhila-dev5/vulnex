@@ -554,6 +554,18 @@ def get_triage_list(
     return {"items": rows, "total": total, "page": page, "limit": limit}
 
 
+@app.get("/api/triage/comments")
+def get_triage_comments(
+    cve_id: str = Query(..., min_length=4, max_length=32),
+    branch: str = "",
+    spec_path: str = "",
+) -> dict:
+    """Read the persisted comment/dispute history for one finding."""
+    with db.session() as conn:
+        comments = db.finding_comments(conn, cve_id.upper(), branch, spec_path)
+    return {"items": comments, "total": len(comments)}
+
+
 @app.post("/api/triage/comment")
 def add_triage_comment(payload: CommentRequest, request: Request) -> dict:
     """Admin-only triage comment on a specific finding."""
@@ -596,12 +608,17 @@ def set_github_pr(payload: GithubPRRequest, request: Request) -> dict:
     """Set the GitHub CVE PR. Allowed for the automation identity and admin."""
     role = require_pr_setter(request)
     number = (payload.number or "").strip().lstrip("#")
-    if not number:
-        raise HTTPException(status_code=400, detail="PR number is required")
+    if not number.isdigit():
+        raise HTTPException(status_code=400, detail="PR number must contain digits only")
     cve_id = payload.cve_id.upper()
     url = (payload.url or "").strip() or (
         f"https://github.com/{config.PATCH_TARGET_REPO}/pull/{number}"
     )
+    # A URL is only an association, not proof of a fix. Restrict it to a
+    # canonical GitHub pull-request URL and require the path number to match.
+    import re
+    if not re.fullmatch(r"https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/pull/" + re.escape(number) + r"/?", url):
+        raise HTTPException(status_code=400, detail="Use a GitHub pull request URL whose number matches the PR number field")
     identity = config.identity_for(role).get("identity") or role
     with db.session() as conn:
         record = db.upsert_triage(
