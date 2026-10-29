@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       branches:
-        description: "Branches from akhila-dev5/azurelinux-test to scan (3.0 or 4.0)"
+        description: "Stable branches from akhila-dev5/azurelinux-test (3.0 and/or 4.0 only)"
         default: "3.0,4.0"
       enrich_limit:
         description: "Max CVEs to enrich from NVD/MITRE/Red Hat/GHSA"
