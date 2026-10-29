@@ -828,7 +828,7 @@ def start_scan(request: Request, payload: ScanRequest | None = None) -> JSONResp
     elif all(b == "3.0" for b in requested_branches):
         ecosystem = "Azure Linux:3"
     else:
-        raise HTTPException(status_code=400, detail="Scan only one release family at a time (3.0 or 4.0).")
+        ecosystem = "Azure Linux:3+Azure Linux:4"
     options = ScanOptions(
         branches=requested_branches,
         ecosystem=ecosystem,
