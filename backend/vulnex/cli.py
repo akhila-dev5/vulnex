@@ -21,7 +21,7 @@ from .scanner import ScanOptions, run_scan
 
 
 def _cmd_scan(args: argparse.Namespace) -> int:
-    branches = ["3.0"]
+    branches = [b.strip() for b in args.branches.split(",") if b.strip()]
     packages = {p.strip() for p in args.packages.split(",") if p.strip()} if args.packages else None
     options = ScanOptions(
         branches=branches,
