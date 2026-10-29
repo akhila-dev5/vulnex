@@ -169,6 +169,17 @@ def run_scan(
 ) -> dict:
     """Run a full scan and persist a fresh snapshot. Returns scan counts."""
     options = options or ScanOptions()
+    # Hard guard: this scanner is intentionally limited to the two stable
+    # release branches. Do not silently scan development or fasttrack branches.
+    allowed_branches = {"3.0", "4.0"}
+    invalid_branches = sorted(set(options.branches) - allowed_branches)
+    if not options.branches or invalid_branches:
+        raise ValueError(
+            "Vulnex scans only the exact 3.0 and 4.0 branches; "
+            f"invalid selection: {', '.join(invalid_branches) or '(empty)'}"
+        )
+    if len(set(options.branches)) > 1:
+        raise ValueError("Run one release family per scan: choose 3.0 or 4.0.")
     started = time.time()
 
     def emit(message: str, **extra) -> None:
