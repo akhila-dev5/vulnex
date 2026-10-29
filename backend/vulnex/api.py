@@ -806,9 +806,17 @@ def start_scan(request: Request, payload: ScanRequest | None = None) -> JSONResp
             status_code=400,
             detail=f"Unsupported branch(es): {', '.join(invalid_branches)}. Choose a branch from azurelinux-test.",
         )
+    # Use the advisory ecosystem matching the selected release family. The
+    # package/spec inventory itself always comes from the configured azurelinux-test fork.
+    if all(b.startswith("4.0") or b.startswith("fasttrack/4.0") for b in requested_branches):
+        ecosystem = "Azure Linux:4"
+    elif all(b.startswith("3.0") or b.startswith("fasttrack/3.0") for b in requested_branches):
+        ecosystem = "Azure Linux:3"
+    else:
+        raise HTTPException(status_code=400, detail="Scan only one release family at a time (3.0 or 4.0).")
     options = ScanOptions(
-        # The configured source is always the user's azurelinux-test fork.
         branches=requested_branches,
+        ecosystem=ecosystem,
         packages=set(payload.packages) if payload.packages else None,
         limit=payload.limit,
         verify_blobs=payload.verify_blobs,
