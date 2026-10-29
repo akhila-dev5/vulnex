@@ -25,6 +25,7 @@ type Finding = {
   patch_availability?: { ai_verdict?: string; patch_link?: string; available_since?: string };
 };
 type PageResult<T> = { items: T[]; total: number; page?: number; limit?: number };
+type FindingComment = { id?: number; kind?: string; author?: string; body?: string; created_at?: string };
 type DeepView = { cve_id?: string; package_name?: string; package_version?: string; branch?: string; spec_path?: string; spec_url?: string; tarball?: { name?: string; url?: string; available?: boolean | null } | null; affected_files?: Array<string | { path?: string; file?: string; url?: string; name?: string }>; backport_patches?: Array<{ filename?: string; url?: string; present?: boolean | null }>; notes?: string[] };
 type CveDetail = { cve_id?: string; findings?: Finding[]; enrichment?: { description?: string; published?: string; modified?: string; cvss_score?: number; severity?: string; references?: Array<{ url?: string; name?: string }> } | null; links?: Array<{ label: string; url: string }> };
 type Stats = {
@@ -75,6 +76,8 @@ function App() {
   const [expandedKey, setExpandedKey] = useState("");
   const [modal, setModal] = useState<"dispute" | "comment" | "patch" | "pr" | null>(null);
   const [actionMenuKey, setActionMenuKey] = useState("");
+  const [commentHistory, setCommentHistory] = useState<Record<string, FindingComment[]>>({});
+  const [historyLoadingKey, setHistoryLoadingKey] = useState("");
   const [deepTarget, setDeepTarget] = useState<Finding | null>(null);
   const [deepData, setDeepData] = useState<DeepView | null>(null);
   const [deepBusy, setDeepBusy] = useState(false);
@@ -152,6 +155,20 @@ function App() {
   useEffect(() => { void load(); }, [load]);
 
   const refresh = () => { void load(); };
+
+  const toggleExpanded = async (row: Finding, key: string) => {
+    if (expandedKey === key) { setExpandedKey(""); return; }
+    setExpandedKey(key);
+    if (commentHistory[key]) return;
+    setHistoryLoadingKey(key);
+    try {
+      const params = new URLSearchParams({ cve_id: row.cve_id, branch: row.branch || "", spec_path: row.spec_path || "" });
+      const result = await request<{ items: FindingComment[] }>("/triage/comments?" + params.toString(), {}, token);
+      setCommentHistory(current => ({ ...current, [key]: result.items || [] }));
+    } catch (e) {
+      setCommentHistory(current => ({ ...current, [key]: [{ kind: "error", body: messageOf(e) }] }));
+    } finally { setHistoryLoadingKey(""); }
+  };
 
   const openDeep = async (row: Finding) => {
     setDeepTarget(row); setDeepData(null); setDeepError(""); setDeepBusy(true);
@@ -297,12 +314,13 @@ function App() {
                       <button role="menuitem" disabled={!canAdmin} onClick={() => { setActionMenuKey(""); openAction("dispute", row); }}><AlertTriangle size={14} /> Dispute</button>
                     </div>}
                   </div></td>
-                  <td><button className="icon-btn" onClick={() => setExpandedKey(expandedKey === key ? "" : key)} aria-label="Expand row">{expandedKey === key ? <ChevronDown size={16} /> : <ChevronRight size={16} />}</button></td>
+                  <td><button className="icon-btn" onClick={() => void toggleExpanded(row, key)} aria-label="Expand row">{expandedKey === key ? <ChevronDown size={16} /> : <ChevronRight size={16} />}</button></td>
                 </tr>
                 {expandedKey === key && <tr className="expanded"><td colSpan={9}>
                   <div className="expanded-grid">
                     <div><small>Patch evidence</small><strong>{row.patch_availability?.available ? "Candidate patch link found — not independently verified" : "Insufficient evidence to confirm a patch"}</strong><small>Source package specification</small>{row.spec_path ? <a href={`https://github.com/akhila-dev5/azurelinux-test/blob/${encodeURIComponent(row.branch)}/${row.spec_path}`} target="_blank" rel="noopener noreferrer">{row.spec_path}</a> : <span>Not available</span>}</div>
                     <div><small>Finding</small><strong>{row.cve_id}</strong><p>{row.description || "The approved source does not provide a description for this finding."}</p><small>Recorded patch result</small>{row.patch_availability?.patch_link ? <a href={row.patch_availability.patch_link} target="_blank" rel="noopener noreferrer">{row.patch_availability.patch_link}</a> : <span>Not recorded</span>}</div>
+                    <div className="history-panel"><small>Triage history</small>{historyLoadingKey === key ? <span className="muted">Loading recorded comments…</span> : (commentHistory[key] || []).length ? (commentHistory[key] || []).map((comment, index) => <article key={comment.id || index}><div><strong>{comment.kind === "dispute" ? "Dispute" : comment.kind === "error" ? "Could not load history" : "Comment"}</strong><small>{comment.author || "Recorded user"} · {comment.created_at ? new Date(comment.created_at).toLocaleString() : "Date unavailable"}</small></div><p>{comment.body || "No comment text."}</p></article>) : <span className="muted">No triage comments or disputes recorded for this finding.</span>}</div>
                   </div>
                 </td></tr>}
               </React.Fragment>;
