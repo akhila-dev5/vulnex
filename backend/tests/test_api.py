@@ -183,8 +183,10 @@ def test_packages_and_detail(client):
     assert detail["evr"] == "1.2.3-4"
     assert detail["is_primary"] == 1
     assert len(detail["patches"]) == 1
-    # Only the open exposure is listed; the patched finding is not served.
-    assert len(detail["findings"]) == 1
+    # Every CVE status is retained for detail, triage, and assignment.
+    assert {item["cve_id"] for item in detail["findings"]} == {
+        "CVE-2024-0500", "CVE-2024-0001"
+    }
     # Sibling versioned specs are exposed as variants.
     assert len(detail["variants"]) == 2
     # Explicit spec lookup disambiguates duplicate package names.
@@ -195,29 +197,39 @@ def test_packages_and_detail(client):
     assert variant["findings"] == []
 
 
-def test_fixed_and_ruled_out_cves_are_not_served(client):
-    """The console only ever shows open exposures.
+def test_all_finding_statuses_are_visible_and_details_work(client, admin):
+    """Patched and ruled-out CVEs remain visible for evidence and review."""
+    listing = client.get("/api/findings").json()
+    assert listing["total"] == 2
+    assert {item["status"] for item in listing["items"]} == {"affected", "patched"}
 
-    CVE-2024-0001 is ``patched`` in the fixture (a distro backport); it must not
-    appear in any list, CVE page, package page or count.
-    """
-    assert client.get("/api/findings").json()["total"] == 1
-    # There is no status filter: a stray ?status= is ignored, never honoured.
+    assert client.get("/api/findings", params={"status": "affected"}).json()["total"] == 1
     assert client.get("/api/findings", params={"status": "patched"}).json()["total"] == 1
-    assert client.get("/api/findings", params={"status": ""}).json()["total"] == 1
 
-    assert client.get("/api/cves/CVE-2024-0001", params={"enrich": "false"}).status_code == 404
-    assert client.get("/api/cves/CVE-2024-0001/deep").status_code == 404
+    detail = client.get("/api/cves/CVE-2024-0001", params={"enrich": "false"})
+    assert detail.status_code == 200
+    assert detail.json()["findings"][0]["status"] == "patched"
 
-    detail = client.get("/api/packages/demo").json()
-    assert [f["cve_id"] for f in detail["findings"]] == ["CVE-2024-0500"]
+    deep = client.get("/api/cves/CVE-2024-0001/deep")
+    assert deep.status_code == 200
+
+    assignment = client.post(
+        "/api/assignments",
+        headers=admin,
+        json={
+            "cve_id": "CVE-2024-0001",
+            "package_name": "demo",
+            "spec_path": "SPECS/demo/demo.spec",
+            "assignee_email": "gurujuakhila.dev@gmail.com",
+        },
+    )
+    assert assignment.status_code == 200
+    assert assignment.json()["assignment"]["assignee_email"] == "gurujuakhila.dev@gmail.com"
 
     stats = client.get("/api/stats").json()
-    assert stats["total_findings"] == 1
+    # Summary cards remain open-exposure counts, distinct from the full inventory.
     assert stats["affected"] == 1
     assert stats["patched"] == 1
-    assert stats["excluded_findings"] == 1
-    assert stats["distinct_cves"] == 1
 
 
 def test_release_branch_filter_excludes_development_branches(client):
@@ -227,6 +239,46 @@ def test_release_branch_filter_excludes_development_branches(client):
     # Fixtures contain only 3.0-dev records. Stable 3.0 filters must not mix them in.
     assert findings["total"] == 0
     assert packages["total"] == 0
+
+
+def test_stats_are_scoped_to_selected_stable_branch(client):
+    stats = client.get("/api/stats", params={"branch": "3.0"}).json()
+    # The fixture's only rows are on 3.0-dev. Do not show them as stable 3.0 data.
+    assert stats["selected_branch"] == "3.0"
+    assert stats["total_packages"] == 0
+    assert stats["total_findings"] == 0
+    assert not stats["last_scan"].get("finished_at")
+
+
+def test_snapshot_refresh_preserves_other_stable_branch_and_purges_legacy_rows(client):
+    conn = db.connect()
+    try:
+        scan3 = db.start_scan(conn, ["3.0"], "Azure Linux:3")
+        db.replace_snapshot(
+            conn, scan3,
+            packages=[_package(scan_id=scan3, branch="3.0")],
+            patches=[],
+            findings=[_finding(scan_id=scan3, branch="3.0")],
+            branches=["3.0"],
+        )
+        scan4 = db.start_scan(conn, ["4.0"], "Azure Linux:4")
+        db.replace_snapshot(
+            conn, scan4,
+            packages=[_package(scan_id=scan4, branch="4.0")],
+            patches=[],
+            findings=[_finding(scan_id=scan4, branch="4.0")],
+            branches=["4.0"],
+        )
+        package_branches = {
+            row["branch"] for row in conn.execute("SELECT branch FROM packages").fetchall()
+        }
+        finding_branches = {
+            row["branch"] for row in conn.execute("SELECT branch FROM findings").fetchall()
+        }
+        assert package_branches == {"3.0", "4.0"}
+        assert finding_branches == {"3.0", "4.0"}
+    finally:
+        conn.close()
 
 
 def test_scan_request_rejects_development_and_fasttrack_branches(client, admin):
