@@ -696,6 +696,15 @@ def set_github_pr(payload: GithubPRRequest, request: Request) -> dict:
             resolution_status="in_progress",
             owner=config.ADMIN_EMAIL or config.ADMIN_IDENTITY,
         )
+    if request.url.path.endswith("/google-pr"):
+        # Backward-compatible response names for the original automation client.
+        record = {
+            **record,
+            "google_pr_number": record.get("github_pr_number", ""),
+            "google_pr_url": record.get("github_pr_url", ""),
+            "google_pr_set_by": record.get("github_pr_set_by", ""),
+            "google_pr_set_at": record.get("github_pr_set_at", ""),
+        }
     return {"triage": record, "role": role, "identity": identity}
 
 
