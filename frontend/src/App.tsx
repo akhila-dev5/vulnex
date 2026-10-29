@@ -250,8 +250,8 @@ function App() {
           <span><strong>Vulnex</strong><small>Security Intelligence</small></span>
         </a>
         <div className="scope-card">
-          <span className="scope-dot" /><div><small>SCAN SCOPE</small><strong>Azure Linux · {branch}</strong></div>
-          <StatusPill tone={branch === "3.0" ? "good" : "neutral"}>{branch === "3.0" ? "Configured" : "Not scanned"}</StatusPill>
+          <span className="scope-dot" /><div><small>SCAN SCOPE</small><strong>azurelinux-test · {branch}</strong></div>
+          <StatusPill tone={branch === "3.0" ? "good" : "neutral"}>{"Configured"}</StatusPill>
         </div>
         <nav className="side-nav" aria-label="Main navigation">
           <button className={activeTab === "triage" ? "active" : ""} onClick={() => { setActiveTab("triage"); setPage(1); }}><LayoutDashboard size={17} /> Dashboard</button>
@@ -269,7 +269,7 @@ function App() {
           <div className="mobile-brand"><ShieldCheck size={20} /><b>Vulnex</b></div>
           <div className="heading">
             <h1>{activeTab === "triage" ? "Security overview" : activeTab === "affected" ? "Affected findings" : "Package inventory"}</h1>
-            <p>Security findings, patch evidence and review history for Azure Linux {branch}.</p>
+            <p>Security findings, patch evidence and review history from azurelinux-test branch {branch}.</p>
           </div>
           <div className="top-actions">
             <StatusPill tone={canWrite ? "good" : "neutral"}>{canWrite ? "Administrator" : "Guest · read-only"}</StatusPill>
