@@ -1,8 +1,7 @@
 """Azure Linux source-repository collector.
 
 Pulls the *real* ``SPECS/`` tree from the configured Azure Linux GitHub
-repository (default: ``akhila-dev5/azurelinux-test``, branches ``3.0-dev`` and
-``fasttrack/3.0``), fetches each ``.spec`` file and parses it. Nothing here is
+repository (default: ``akhila-dev5/azurelinux-test``; scan branches are selected from that fork), fetches each ``.spec`` file and parses it. Nothing here is
 hard-coded package data — refreshing the dashboard re-reads the live repository.
 
 Design notes
