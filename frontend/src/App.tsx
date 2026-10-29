@@ -208,6 +208,27 @@ function App() {
     finally { setDetailBusy(false); }
   };
 
+  // Support shareable CVE URLs and browser back/forward navigation.
+  useEffect(() => {
+    const syncCveRoute = () => {
+      const match = window.location.hash.match(/^#\/cve\/(CVE-[A-Za-z0-9-]+)$/i);
+      if (match) {
+        void openDetail(decodeURIComponent(match[1]).toUpperCase());
+      } else {
+        setDetail(null);
+        setDetailError("");
+      }
+    };
+    const initial = window.location.hash.match(/^#\/cve\/(CVE-[A-Za-z0-9-]+)$/i);
+    if (initial) void openDetail(decodeURIComponent(initial[1]).toUpperCase());
+    window.addEventListener("hashchange", syncCveRoute);
+    window.addEventListener("popstate", syncCveRoute);
+    return () => {
+      window.removeEventListener("hashchange", syncCveRoute);
+      window.removeEventListener("popstate", syncCveRoute);
+    };
+  }, []);
+
   const submitTriage = async () => {
     if (!target || !modal) return;
     const ref = { cve_id: target.cve_id, branch: target.branch, spec_path: target.spec_path };
