@@ -818,7 +818,7 @@ def add_assignment_comment(
 def start_scan(request: Request, payload: ScanRequest | None = None) -> JSONResponse:
     require_admin(request)
     payload = payload or ScanRequest()
-    requested_branches = payload.branches or ["3.0"]
+    requested_branches = payload.branches or ["3.0", "4.0"]
     allowed_branches = {"3.0", "4.0"}
     invalid_branches = sorted(set(requested_branches) - allowed_branches)
     if invalid_branches:
