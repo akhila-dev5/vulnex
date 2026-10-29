@@ -33,7 +33,7 @@ __all__ = ["ScanOptions", "run_scan"]
 
 @dataclass
 class ScanOptions:
-    branches: list[str] = field(default_factory=lambda: ["3.0"])
+    branches: list[str] = field(default_factory=lambda: ["3.0", "4.0"]
     packages: set[str] | None = None
     limit: int = 0
     ecosystem: str = config.OSV_ECOSYSTEM
