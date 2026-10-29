@@ -90,6 +90,9 @@ function App() {
   const [resolutionFilter, setResolutionFilter] = useState("all");
   const [target, setTarget] = useState<Finding | null>(null);
   const [formText, setFormText] = useState("");
+  const [disputeTag, setDisputeTag] = useState("UPSTREAM");
+  const [disputeVersion, setDisputeVersion] = useState("");
+  const [neverApplicable, setNeverApplicable] = useState(false);
   const [patchLink, setPatchLink] = useState("");
   const [patchVerdict, setPatchVerdict] = useState("");
   const [availableSince, setAvailableSince] = useState("");
@@ -187,7 +190,7 @@ function App() {
     const ref = { cve_id: target.cve_id, branch: target.branch, spec_path: target.spec_path };
     const requestBody: Record<string, string> = { ...ref };
     let path = "";
-    if (modal === "dispute") { path = "/triage/dispute"; requestBody.reason = formText.trim(); }
+    if (modal === "dispute") { path = "/triage/dispute"; requestBody.reason = disputeTag + ": " + formText.trim(); requestBody.first_unaffected_version = disputeVersion.trim(); requestBody.never_applicable = neverApplicable ? "true" : "false"; }
     if (modal === "comment") { path = "/triage/comment"; requestBody.body = formText.trim(); }
     if (modal === "patch") {
       path = "/triage/patch"; requestBody.final_verdict = patchVerdict;
@@ -213,7 +216,7 @@ function App() {
   };
 
   const openAction = (action: "dispute" | "comment" | "patch" | "pr", row: Finding) => {
-    setTarget(row); setModal(action); setFormText("");
+    setTarget(row); setModal(action); setFormText(""); setDisputeTag("UPSTREAM"); setDisputeVersion(""); setNeverApplicable(false);
     setPatchVerdict(String(row.triage?.final_verdict || ""));
     setPatchLink(row.patch_availability?.patch_link || "");
     setAvailableSince(String(row.patch_availability?.available_since || ""));
@@ -353,7 +356,12 @@ function App() {
           <button className="modal-close icon-btn" aria-label="Close" onClick={() => setModal(null)}><X size={16} /></button>
           <small>TRIAGE ACTION · {target.cve_id}</small>
           <h2 id="modal-title">{modal === "dispute" ? "Dispute finding" : modal === "comment" ? "Add triage comment" : modal === "patch" ? "Patch availability" : "Set GitHub pull request"}</h2>
-          {modal === "dispute" || modal === "comment" ? <label>Details<textarea value={formText} onChange={e => setFormText(e.target.value)} rows={5} placeholder={modal === "dispute" ? "Explain why this verdict should be reviewed…" : "Add a comment to the triage history…"} /></label> : null}
+          {modal === "dispute" ? <>
+            <label>Dispute reason<select value={disputeTag} onChange={e => setDisputeTag(e.target.value)}><option value="UPSTREAM">Upstream says not affected</option><option value="VERSION">Version not affected</option><option value="BACKPORT">Fix already backported</option><option value="CONFIGURATION">Vulnerable feature/configuration not used</option><option value="OTHER">Other evidence</option></select></label>
+            <label>Supporting details<textarea value={formText} onChange={e => setFormText(e.target.value)} rows={4} placeholder="Explain the evidence supporting this dispute…" /></label>
+            <label>First unaffected version<input value={disputeVersion} disabled={neverApplicable} onChange={e => setDisputeVersion(e.target.value)} placeholder="e.g. 3.13.15-1" /></label>
+            <label className="checkbox-line"><input type="checkbox" checked={neverApplicable} onChange={e => { setNeverApplicable(e.target.checked); if (e.target.checked) setDisputeVersion(""); }} /> Never applicable (use only when supported by evidence)</label>
+          </> : modal === "comment" ? <label>Comment<textarea value={formText} onChange={e => setFormText(e.target.value)} rows={5} placeholder="Add a comment to the triage history…" /></label> : null}
           {modal === "patch" && <><label>Final verdict<select value={patchVerdict} onChange={e => setPatchVerdict(e.target.value)}><option value="">No override</option><option>Patch Available</option><option>No Patch Found</option></select></label><label>Patch link<input value={patchLink} onChange={e => setPatchLink(e.target.value)} /></label><label>Available since<input type="date" value={availableSince} onChange={e => setAvailableSince(e.target.value)} /></label></>}
           {modal === "pr" && <><label>PR number<input value={prNumber} onChange={e => setPrNumber(e.target.value)} placeholder="19015" /></label><label>PR URL (optional)<input value={prUrl} onChange={e => setPrUrl(e.target.value)} placeholder="https://github.com/…" /></label></>}
           <div className="modal-actions"><button className="btn secondary" onClick={() => setModal(null)}>Cancel</button><button className="btn primary" onClick={submitTriage} disabled={!canAdmin || ((modal === "comment" || modal === "dispute") && !formText.trim())}>Save changes</button></div>
