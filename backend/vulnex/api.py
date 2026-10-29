@@ -665,6 +665,7 @@ def raise_dispute(payload: DisputeRequest, request: Request) -> dict:
     return {"comment": comment, "triage": record}
 
 
+@app.post("/api/triage/google-pr")
 @app.post("/api/triage/github-pr")
 def set_github_pr(payload: GithubPRRequest, request: Request) -> dict:
     """Set the GitHub CVE PR. Allowed for the automation identity and admin."""
