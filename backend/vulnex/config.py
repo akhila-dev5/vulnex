@@ -79,7 +79,7 @@ ROLE_AUTOMATION = "automation"
 
 # Admin identity shown in the UI and stored on triage records. The email is a
 # display/owner value only: the admin credential is GitHub, not a password.
-ADMIN_IDENTITY = os.environ.get("VULNEX_ADMIN_IDENTITY", "akhila-dev5")
+ADMIN_IDENTITY = os.environ.get("VULNEX_ADMIN_IDENTITY", "gurujuakhila.dev@gmail.com")
 ADMIN_EMAIL = os.environ.get("VULNEX_ADMIN_EMAIL", "gurujuakhila.dev@gmail.com").strip().lower()
 
 # Google authentication for the sole administrator. Configure a Google OAuth
