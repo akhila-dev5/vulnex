@@ -123,7 +123,7 @@ def _now() -> str:
 
 
 def _branches_for_filter(branch: str) -> list[str] | None:
-    """Map a UI release label to real source branch names in older snapshots."""
+    """Map release labels to branch names available in the user's azurelinux-test fork."""
     aliases = {
         "3.0": ["3.0", "3.0-dev", "fasttrack/3.0"],
         "4.0": ["4.0", "4.0-dev", "fasttrack/4.0"],
@@ -799,7 +799,7 @@ def start_scan(request: Request, payload: ScanRequest | None = None) -> JSONResp
     require_admin(request)
     payload = payload or ScanRequest()
     options = ScanOptions(
-        # The release branch is the production Azure Linux 3.0 source. Do not
+        # Scan only the selected release within the configured azurelinux-test fork. Do not
         # scan the repository's default branch or mix in 3.0-dev/fasttrack.
         branches=["3.0"],
         packages=set(payload.packages) if payload.packages else None,
