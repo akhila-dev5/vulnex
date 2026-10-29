@@ -35,15 +35,15 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(
-    title="VULNEX API",
+    title="Vulnex API",
     version=__version__,
-    description="Azure Linux CVE scanner and security dashboard API.",
+    description="Vulnex Azure Linux CVE triage API.",
     lifespan=lifespan,
 )
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[origin.strip() for origin in __import__("os").environ.get("VULNEX_ALLOWED_ORIGINS", "").split(",") if origin.strip()],
     allow_methods=["*"],
     allow_headers=["*"],
 )
