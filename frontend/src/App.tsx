@@ -22,7 +22,7 @@ type Finding = {
   cve_id: string; package_name: string; package_version?: string; branch: string;
   spec_path: string; severity?: string; cvss_score?: number | null; description?: string;
   status?: string; detected_on?: string; triage?: Record<string, unknown> | null;
-  patch_availability?: { ai_verdict?: string; patch_link?: string; available_since?: string };
+  patch_availability?: { applicable?: boolean; available?: boolean; ai_verdict?: string; final_verdict?: string; possible_links?: string[]; analysis?: string[]; patch_link?: string; available_since?: string };
 };
 type PageResult<T> = { items: T[]; total: number; page?: number; limit?: number };
 type FindingComment = { id?: number; kind?: string; author?: string; body?: string; created_at?: string };
@@ -109,6 +109,9 @@ function App() {
       const nextStats = await request<Stats>("/stats", {}, token);
       const params = new URLSearchParams({ search: query.trim(), branch, page: String(page), limit: "25" });
       if (severity !== "all") params.set("severity", severity);
+      if (patchFilter !== "all") params.set("patch_state", patchFilter);
+      if (triageFilter !== "all") params.set("triage_status", triageFilter);
+      if (resolutionFilter !== "all") params.set("resolution_status", resolutionFilter);
       const [findings, packages] = await Promise.all([
         request<PageResult<Finding>>("/findings?" + params.toString(), {}, token),
         request<PageResult<{name: string; version?: string; branch?: string; spec_path?: string}>>("/packages?" + new URLSearchParams({
@@ -116,17 +119,7 @@ function App() {
         }).toString(), {}, token),
       ]);
       setStats(nextStats);
-      let visible = findings.items;
-      if (patchFilter !== "all") {
-        visible = visible.filter(item => {
-          const patch = item.patch_availability;
-          const available = Boolean(patch?.available);
-          return patchFilter === "available" ? available : patchFilter === "unavailable" ? patch?.applicable === true && !available : !patch?.applicable || patch?.ai_verdict === "Unknown";
-        });
-      }
-      if (triageFilter !== "all") visible = visible.filter(item => String(item.triage?.triage_status || "open").toLowerCase() === triageFilter);
-      if (resolutionFilter !== "all") visible = visible.filter(item => String(item.triage?.resolution_status || item.status || "").toLowerCase() === resolutionFilter);
-      setRows(activeTab === "packages" ? [] : visible);
+      setRows(activeTab === "packages" ? [] : findings.items);
       setTotal(activeTab === "packages" ? packages.total : findings.total);
       setPackageRows(packages.items);
       setPackageTotal(packages.total);
