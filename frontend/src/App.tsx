@@ -31,7 +31,7 @@ type DeepView = { cve_id?: string; package_name?: string; package_version?: stri
 type CveDetail = { cve_id?: string; findings?: Finding[]; enrichment?: { description?: string; published?: string; modified?: string; cvss_score?: number; severity?: string; references?: Array<{ url?: string; name?: string }> } | null; links?: Array<{ label: string; url: string }> };
 type Stats = {
   total_packages?: number; total_findings?: number; distinct_cves?: number;
-  severity?: Record<string, number>; last_scan?: { finished_at?: string; started_at?: string; branches?: string };
+  severity?: Record<string, number>; last_scan?: { finished_at?: string; started_at?: string; branches?: string; status?: string };
   repository?: { owner?: string; repo?: string; branches?: string[] };
 };
 
@@ -112,7 +112,7 @@ function App() {
     setBusy(true);
     setError("");
     try {
-      const nextStats = await request<Stats>("/stats", {}, token);
+      const nextStats = await request<Stats>("/stats?" + new URLSearchParams({ branch }).toString(), {}, token);
       const params = new URLSearchParams({ search: query.trim(), branch, page: String(page), limit: "25" });
       if (severity !== "all") params.set("severity", severity);
       if (patchFilter !== "all") params.set("patch_state", patchFilter);
@@ -314,6 +314,11 @@ function App() {
           </div>
         </header>
 
+        {!stats.last_scan?.finished_at && <section className="alert warning scan-needed">
+          <div><strong>No successful stable {branch} scan found.</strong><span>The previous snapshot contains legacy development/fasttrack branch data, which is intentionally excluded. Run a fresh scan to populate stable {branch} findings.</span></div>
+          {canWrite && <button className="btn primary" onClick={runScan} disabled={scanStatus === "starting" || scanStatus === "running"}><Activity size={15} /> {scanStatus === "running" ? "Scanning…" : "Scan stable " + branch}</button>}
+        </section>}
+
         <section className="summary-grid">
           <article className="metric-card"><span className="metric-icon blue"><Package size={18} /></span><small>Packages scanned</small><strong>{(stats.total_packages ?? 0).toLocaleString()}</strong><span>Selected branch: {branch}</span></article>
           <article className="metric-card"><span className="metric-icon red"><ShieldAlert size={18} /></span><small>Open findings</small><strong>{(stats.total_findings ?? total).toLocaleString()}</strong><span>Current snapshot</span></article>
@@ -343,7 +348,7 @@ function App() {
             <thead><tr><th>Package</th><th>Version</th><th>Branch</th><th>Spec path</th></tr></thead>
             <tbody>{packageRows.map((pkg, index) => <tr key={pkg.spec_path || pkg.name + index}><td><strong>{pkg.name}</strong></td><td>{pkg.version || "—"}</td><td><code>{pkg.branch || "3.0"}</code></td><td className="spec-path">{pkg.spec_path || "—"}</td></tr>)}</tbody>
           </table></div>
-          : rows.length === 0 ? <div className="empty-state"><FileSearch size={26} /><strong>No findings in this view</strong><span>Try another search or run a fresh scan for branch 3.0.</span></div>
+          : rows.length === 0 ? <div className="empty-state"><FileSearch size={26} /><strong>No findings in this view</strong><span>{`Try another search or run a fresh scan for stable branch ${branch}.`}</span></div>
           : <div className="table-scroll"><table>
             <thead><tr><th>Vulnerability / package</th><th>Branch</th><th>Severity</th><th>Patch availability</th><th>Resolution</th><th>Fixed version</th><th>Owner</th><th>Actions</th><th /></tr></thead>
             <tbody>{rows.map(row => {
