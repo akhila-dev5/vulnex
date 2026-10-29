@@ -135,12 +135,12 @@ def patch_availability(
     if not applicable:
         ai_verdict = "Not applicable"
     else:
-        ai_verdict = "Candidate patch found" if available else "Unknown — no candidate patch found"
+        ai_verdict = "Patch Available" if available else "No Patch Found"
 
     published = (enrichment or {}).get("published") or finding.get("advisory_published") or ""
     available_since = published[:10] if (published and available) else ""
 
-    final_verdict = triage.get("final_verdict") or ("Unknown" if not available else "Candidate found")
+    final_verdict = triage.get("final_verdict") or ai_verdict
     override_link = triage.get("patch_link") or ""
     override_since = triage.get("available_since") or ""
 
