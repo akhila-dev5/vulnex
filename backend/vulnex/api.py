@@ -399,11 +399,9 @@ def get_package(name: str, branch: str | None = None, spec: str | None = None) -
     with db.session() as conn:
         pkg = db.get_package(conn, name, branch, spec_path=spec)
         if pkg:
-            # Open exposures only — a package page never lists what is fixed.
-            pkg["findings"] = [
-                f for f in pkg.get("findings", [])
-                if f.get("status") == config.OPEN_STATUS
-            ]
+            # Keep every CVE found in the selected package spec, including
+            # backported, explicitly-not-affected, and unconfirmed records.
+            # The dashboard must retain these rows for review and assignment.
             _decorate_findings(conn, pkg["findings"], package=pkg)
     if not pkg:
         raise HTTPException(status_code=404, detail="Package not found")
@@ -413,6 +411,7 @@ def get_package(name: str, branch: str | None = None, spec: str | None = None) -
 @app.get("/api/findings")
 def get_findings(
     severity: str = "",
+    status: str = "",
     search: str = "",
     package: str = "",
     branch: str = "",
@@ -424,9 +423,14 @@ def get_findings(
     owner: str = "",
     fixed_version: str = "",
 ) -> dict:
-    """List open exposures with source-backed filters and persisted triage metadata.
+    """List all CVE findings from the selected stable branch.
 
-    Patch filters describe whether a candidate patch reference was found. They
+    Findings include affected, patched, explicitly-not-affected, and
+    unconfirmed records. Keeping fixed/backported CVEs visible is necessary
+    for triage history, details, and assignment. Pass status to narrow the
+    scanner status when a consumer specifically wants one category.
+
+    Patch filters describe whether a candidate patch reference was found; they
     do not assert that a patch is verified or that a fix has shipped.
     """
     extra_filters = any((patch_state, triage_status, resolution_status, owner, fixed_version))
@@ -434,7 +438,7 @@ def get_findings(
         if not extra_filters:
             rows, total = db.list_findings(
                 conn,
-                status=config.OPEN_STATUS,
+                status=status,
                 severity=severity,
                 search=search,
                 package=package,
@@ -501,12 +505,10 @@ def get_findings(
 def get_cve(cve_id: str, enrich: bool = True) -> dict:
     cve_id = cve_id.upper()
     with db.session() as conn:
-        # A CVE page only exists while the CVE is still open here: once every
-        # branch has backported it there is nothing left to triage.
-        findings = [
-            f for f in db.findings_for_cve(conn, cve_id)
-            if f.get("status") == config.OPEN_STATUS
-        ]
+        # Detail pages must remain available for every finding status.
+        # A backported or ruled-out CVE still needs evidence, history, and
+        # assignment visibility in the dashboard.
+        findings = db.findings_for_cve(conn, cve_id)
         cached = db.get_cached_cve(conn, cve_id)
         assignment = None
         for a in db.list_assignments(conn):
@@ -548,10 +550,7 @@ def get_cve_deep(cve_id: str, branch: str = "", spec: str = "") -> dict:
     """The Deep view: files inside the package tarball that this CVE touches."""
     cve_id = cve_id.upper()
     with db.session() as conn:
-        results = [
-            f for f in db.findings_for_cve(conn, cve_id)
-            if f.get("status") == config.OPEN_STATUS
-        ]
+        results = db.findings_for_cve(conn, cve_id)
         if branch:
             results = [f for f in results if f.get("branch") == branch]
         if spec:
