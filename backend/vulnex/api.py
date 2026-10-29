@@ -478,7 +478,9 @@ def get_findings(
                 continue
             if patch_state == "available" and not patch.get("available"):
                 continue
-            if patch_state == "unavailable" and (not patch.get("applicable") or patch.get("available")):
+            # "Patch not available" means no candidate patch was found,
+            # including findings where patch applicability is not established.
+            if patch_state == "unavailable" and patch.get("available"):
                 continue
             filtered.append(finding)
 
