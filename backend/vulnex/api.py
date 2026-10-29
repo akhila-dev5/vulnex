@@ -187,7 +187,7 @@ def require_admin(request: Request) -> str:
         raise HTTPException(
             status_code=401,
             detail="Read-only access: this action needs an admin sign-in. "
-                   "Sign in with GitHub and retry.",
+                   "Sign in with Google and retry.",
         )
     return role
 
