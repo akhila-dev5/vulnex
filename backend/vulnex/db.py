@@ -379,12 +379,17 @@ def list_packages(
     branch: str = "",
     limit: int = 50,
     offset: int = 0,
+    branches: list[str] | None = None,
 ) -> tuple[list[dict], int]:
     clauses, params = [], []
     if search:
         clauses.append("name LIKE ?")
         params.append(f"%{search}%")
-    if branch:
+    if branches:
+        placeholders = ",".join("?" for _ in branches)
+        clauses.append(f"branch IN ({placeholders})")
+        params.extend(branches)
+    elif branch:
         clauses.append("branch = ?")
         params.append(branch)
     where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
@@ -495,6 +500,7 @@ def list_findings(
     branch: str = "",
     limit: int = 100,
     offset: int = 0,
+    branches: list[str] | None = None,
 ) -> tuple[list[dict], int]:
     clauses, params = [], []
     if status:
@@ -506,7 +512,11 @@ def list_findings(
     if package:
         clauses.append("package_name = ?")
         params.append(package)
-    if branch:
+    if branches:
+        placeholders = ",".join("?" for _ in branches)
+        clauses.append(f"branch IN ({placeholders})")
+        params.extend(branches)
+    elif branch:
         clauses.append("branch = ?")
         params.append(branch)
     if search:
