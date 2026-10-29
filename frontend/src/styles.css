@@ -95,6 +95,10 @@ td small { display:block; color:#909bad; font-size:10px; margin-top:4px; }
 .expanded-grid p { margin:0; color:#66758a; }
 .alert { display:flex; gap:9px; padding:12px 14px; margin-bottom:14px; border-radius:8px; font-size:12px; }
 .alert.error { background:#fff0f1; color:#a32235; border:1px solid #ffd0d7; }
+.alert.warning { align-items:center; justify-content:space-between; gap:16px; background:#fff8e6; color:#704d00; border:1px solid #f2d58a; }
+.alert.warning > div { display:flex; flex-direction:column; gap:4px; }
+.alert.warning span { color:#806b3d; }
+.scan-needed { margin-bottom:16px; }
 .empty-state { display:flex; align-items:center; justify-content:center; flex-direction:column; gap:9px; min-height:190px; color:#8491a4; font-size:12px; }
 .empty-state strong { color:#53637b; font-size:13px; }
 .empty-state svg { opacity:.65; }

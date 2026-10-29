@@ -276,11 +276,26 @@ def replace_snapshot(
     packages: Iterable[dict],
     patches: Iterable[dict],
     findings: Iterable[dict],
+    branches: list[str] | None = None,
 ) -> None:
-    """Atomically swap the current dashboard snapshot."""
-    conn.execute("DELETE FROM packages")
-    conn.execute("DELETE FROM patches")
-    conn.execute("DELETE FROM findings")
+    """Replace only the scanned stable branches while retaining other stable data.
+
+    Legacy development/fasttrack rows are always purged. A scan of 4.0 must not
+    erase the already-scanned 3.0 snapshot (and vice versa).
+    """
+    if branches:
+        placeholders = ",".join("?" for _ in branches)
+        for table in ("packages", "patches", "findings"):
+            conn.execute(
+                f"DELETE FROM {table} WHERE branch IN ({placeholders}) "
+                "OR branch NOT IN ('3.0', '4.0') OR branch IS NULL",
+                tuple(branches),
+            )
+    else:
+        # Backward-compatible full replacement for callers that explicitly
+        # provide no branch scope (e.g. legacy tests and maintenance tasks).
+        for table in ("packages", "patches", "findings"):
+            conn.execute(f"DELETE FROM {table}")
 
     conn.executemany(
         """
@@ -335,42 +350,69 @@ def scan_history(conn: sqlite3.Connection, limit: int = 20) -> list[dict]:
     return [dict(r) for r in rows]
 
 
-def stats(conn: sqlite3.Connection) -> dict:
-    packages = conn.execute("SELECT COUNT(*) c FROM packages").fetchone()["c"]
-    total = conn.execute("SELECT COUNT(*) c FROM findings").fetchone()["c"]
+def stats(conn: sqlite3.Connection, branch: str | None = None) -> dict:
+    """Return dashboard counts scoped to the selected stable branch, if any."""
+    if branch not in (None, "", "3.0", "4.0"):
+        raise ValueError("Stats can only be scoped to stable branch 3.0 or 4.0")
 
-    def count(*where: str) -> int:
-        base = "SELECT COUNT(*) c FROM findings"
-        if where:
-            base += " WHERE " + " AND ".join(where)
-        return conn.execute(base).fetchone()["c"]
+    branch_clause = " AND branch = ?" if branch else ""
+    branch_params = (branch,) if branch else ()
+    packages = conn.execute(
+        "SELECT COUNT(*) c FROM packages" + (" WHERE branch = ?" if branch else ""),
+        branch_params,
+    ).fetchone()["c"]
+    total = conn.execute(
+        "SELECT COUNT(*) c FROM findings" + (" WHERE branch = ?" if branch else ""),
+        branch_params,
+    ).fetchone()["c"]
+
+    def count(*where: str, table: str = "findings") -> int:
+        clauses = list(where)
+        params: tuple = ()
+        if branch:
+            clauses.append("branch = ?")
+            params = (branch,)
+        sql = f"SELECT COUNT(*) c FROM {table}"
+        if clauses:
+            sql += " WHERE " + " AND ".join(clauses)
+        return conn.execute(sql, params).fetchone()["c"]
 
     # The site's subject is open exposures only; severity and CVE counts are
-    # restricted to them so the dashboard never mixes in fixed CVEs.
+    # restricted to the selected stable branch when a branch filter is present.
     open_where = f"status = '{config.OPEN_STATUS}'"
     open_total = count(open_where)
     severity = {
         s: count(f"{open_where} AND severity = '{s}'")
         for s in ("critical", "high", "medium", "low", "none", "unknown")
     }
-    scan = latest_scan(conn) or {}
+    if branch:
+        scan = next(
+            (
+                item for item in scan_history(conn, limit=100)
+                if branch in (item.get("branches") or "").split(",")
+                and item.get("status") == "success"
+            ),
+            {},
+        )
+    else:
+        scan = latest_scan(conn) or {}
+    distinct_where = open_where + branch_clause
+    distinct_params = branch_params
     return {
         "total_packages": packages,
         "total_findings": open_total,
         "affected": open_total,
         "severity": severity,
         "distinct_cves": conn.execute(
-            f"SELECT COUNT(DISTINCT cve_id) c FROM findings WHERE {open_where}"
+            f"SELECT COUNT(DISTINCT cve_id) c FROM findings WHERE {distinct_where}",
+            distinct_params,
         ).fetchone()["c"],
-        # Scanner output the site deliberately does not show.
         "patched": count("status = 'patched'"),
         "false_positive": count("status = 'false_positive'"),
         "unconfirmed": count("status = 'unconfirmed'"),
         "excluded_findings": total - open_total,
-        "total_patches": conn.execute("SELECT COUNT(*) c FROM patches").fetchone()["c"],
-        "nopatch_markers": conn.execute(
-            "SELECT COUNT(*) c FROM patches WHERE is_nopatch = 1"
-        ).fetchone()["c"],
+        "total_patches": count(table="patches"),
+        "nopatch_markers": count("is_nopatch = 1", table="patches"),
         "last_scan": scan,
         "assignments": conn.execute("SELECT COUNT(*) c FROM assignments").fetchone()["c"],
     }
