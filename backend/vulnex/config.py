@@ -25,7 +25,7 @@ REPO_OWNER = os.environ.get("VULNEX_REPO_OWNER", "akhila-dev5")
 REPO_NAME = os.environ.get("VULNEX_REPO_NAME", "azurelinux-test")
 DEFAULT_BRANCHES = [
     b.strip()
-    for b in os.environ.get("VULNEX_BRANCHES", "3.0-dev,fasttrack/3.0").split(",")
+    for b in os.environ.get("VULNEX_BRANCHES", "3.0").split(",")
     if b.strip()
 ]
 
@@ -80,17 +80,16 @@ ROLE_AUTOMATION = "automation"
 # Admin identity shown in the UI and stored on triage records. The email is a
 # display/owner value only: the admin credential is GitHub, not a password.
 ADMIN_IDENTITY = os.environ.get("VULNEX_ADMIN_IDENTITY", "akhila-dev5")
-ADMIN_EMAIL = os.environ.get("VULNEX_ADMIN_EMAIL", "").strip().lower()
+ADMIN_EMAIL = os.environ.get("VULNEX_ADMIN_EMAIL", "gurujuakhila.dev@gmail.com").strip().lower()
 
-# GitHub authentication for the admin. Create a GitHub OAuth App with the
-# callback ``<deployment>/api/auth/github/callback`` and set the two credentials;
-# a login is accepted only when it matches this allow-list.
-ADMIN_GITHUB = os.environ.get("VULNEX_ADMIN_GITHUB", "akhila-dev5").strip().lower()
-GITHUB_OAUTH_CLIENT_ID = os.environ.get("GITHUB_OAUTH_CLIENT_ID", "").strip()
-GITHUB_OAUTH_CLIENT_SECRET = os.environ.get("GITHUB_OAUTH_CLIENT_SECRET", "").strip()
-# Explicit redirect URI for deployments behind a proxy, where the request URL is
-# not the public one. Defaults to the callback route on this host.
-GITHUB_OAUTH_REDIRECT = os.environ.get("VULNEX_GITHUB_REDIRECT", "").strip()
+# Google authentication for the sole administrator. Configure a Google OAuth
+# web client with callback ``<deployment>/api/auth/google/callback``.
+ADMIN_EMAIL_ALLOWLIST = os.environ.get(
+    "VULNEX_ADMIN_EMAIL", "gurujuakhila.dev@gmail.com"
+).strip().lower()
+GOOGLE_OAUTH_CLIENT_ID = os.environ.get("GOOGLE_OAUTH_CLIENT_ID", "").strip()
+GOOGLE_OAUTH_CLIENT_SECRET = os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET", "").strip()
+GOOGLE_OAUTH_REDIRECT = os.environ.get("VULNEX_GOOGLE_REDIRECT", "").strip()
 
 # The automation machine identity keeps a static key (it is a machine, not a
 # person, and rotates per deployment).
@@ -98,15 +97,15 @@ AUTOMATION_IDENTITY = os.environ.get("VULNEX_AUTOMATION_IDENTITY", "vulnex-sec")
 AUTOMATION_EMAIL = os.environ.get(
     "VULNEX_AUTOMATION_EMAIL", "vulnexsecurityautomation@gmail.com"
 )
-AUTOMATION_KEY = os.environ.get("VULNEX_AUTOMATION_KEY") or "vulnex-sec"
+AUTOMATION_KEY = os.environ.get("VULNEX_AUTOMATION_KEY", "")
 
 # How long a sign-in stays valid (seconds).
 SESSION_TTL = int(os.environ.get("VULNEX_SESSION_TTL", str(12 * 3600)))
 
 
-def github_login_configured() -> bool:
-    """True when a GitHub OAuth app is configured for admin sign-in."""
-    return bool(GITHUB_OAUTH_CLIENT_ID and GITHUB_OAUTH_CLIENT_SECRET)
+def google_login_configured() -> bool:
+    """True when Google OAuth is configured for administrator sign-in."""
+    return bool(GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET)
 
 
 def role_for_key(presented_key: str | None) -> str:
@@ -174,7 +173,7 @@ DEFAULT_PACKAGE_LIMIT = int(os.environ.get("VULNEX_PACKAGE_LIMIT", "0"))  # 0 = 
 GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
 NVD_API_KEY = os.environ.get("NVD_API_KEY")
 
-_USER_AGENT = "vulnex/1.0 (+https://github.com/akhila-dev5/vulnex)"
+_USER_AGENT = "Vulnex (+https://github.com/akhila-dev5/vulnex)"
 
 
 def _gh_cli_token() -> str | None:
