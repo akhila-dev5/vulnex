@@ -623,3 +623,26 @@ MIT — see [LICENSE](LICENSE).
 VULNEX correlates public advisory data and repository metadata. It is an
 reconnaissance and triage aid, not a guarantee of security posture; always confirm
 findings before acting on them.
+
+
+## Dashboard interaction notes
+
+The production Vite build is served from `frontend/dist`. The root `frontend/index.html` must remain the Vite entry point that mounts `src/main.tsx`; the legacy static dashboard is retained only as a fallback when no Vite build exists.
+
+The React dashboard uses the same-origin FastAPI routes. Current interactive endpoints include:
+
+- `GET /api/findings` — paginated findings with search, severity, branch, patch-evidence, triage, resolution, owner, and fixed-version filters.
+- `GET /api/cves/{cve_id}?enrich=false` — CVE details without performing optional on-demand external enrichment.
+- `GET /api/cves/{cve_id}/deep?branch={branch}&spec={spec_path}` — affected-file, source-artifact, and backport-patch evidence for the exact finding.
+- `GET /api/triage/comments?cve_id={cve_id}&branch={branch}&spec_path={spec_path}` — persisted comment and dispute history.
+- `POST /api/triage/github-pr` — record a GitHub PR association; a supplied URL must be a GitHub pull-request URL whose number matches the PR number field.
+- `POST /api/triage/dispute` — record a dispute reason, optional first-unaffected version, or the supported “Never Applicable” assertion in the audit trail.
+
+A discovered upstream commit or patch-looking reference is **candidate evidence**, not confirmation that a fix is verified, merged, or shipped. If no candidate is found, the UI reports insufficient evidence rather than asserting that no patch exists.
+
+### Current deployment limitations
+
+- The current persistence layer remains SQLite. PostgreSQL support and a migration path have not been implemented in this change; do not describe this deployment as using PostgreSQL.
+- The scanner is currently configured to scan Azure Linux branch `3.0`. The branch selector also exposes `4.0`, but the UI labels it as not scanned and disables the scan action for that branch until scanning support is configured.
+- Affected-file details are limited to paths and artifacts present in the stored scan/source evidence. The dashboard displays an explicit empty state when that evidence is missing.
+- Google OAuth credentials must remain server-side in Render environment variables. The client redirect URI must match `/api/auth/google/callback` exactly.

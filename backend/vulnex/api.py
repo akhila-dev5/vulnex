@@ -240,6 +240,8 @@ class FindingRef(BaseModel):
 
 class DisputeRequest(FindingRef):
     reason: str
+    first_unaffected_version: str = ""
+    never_applicable: bool = False
 
 
 class GithubPRRequest(FindingRef):
@@ -388,26 +390,81 @@ def get_findings(
     branch: str = "",
     page: int = 1,
     limit: int = Query(100, ge=1, le=1000),
+    patch_state: str = "",
+    triage_status: str = "",
+    resolution_status: str = "",
+    owner: str = "",
+    fixed_version: str = "",
 ) -> dict:
-    """Open exposures only.
+    """List open exposures with source-backed filters and persisted triage metadata.
 
-    There is deliberately no ``status`` filter: the site only ever serves
-    findings that are still ``affected``, never the CVEs this distro has already
-    fixed or ruled out. A stray ``?status=`` is simply ignored.
+    Patch filters describe whether a candidate patch reference was found. They
+    do not assert that a patch is verified or that a fix has shipped.
     """
+    extra_filters = any((patch_state, triage_status, resolution_status, owner, fixed_version))
     with db.session() as conn:
-        rows, total = db.list_findings(
-            conn,
-            status=config.OPEN_STATUS,
-            severity=severity,
-            search=search,
-            package=package,
-            branch=branch,
-            limit=limit,
-            offset=(page - 1) * limit,
-        )
-        _decorate_findings(conn, rows)
-    return {"items": rows, "total": total, "page": page, "limit": limit}
+        if not extra_filters:
+            rows, total = db.list_findings(
+                conn,
+                status=config.OPEN_STATUS,
+                severity=severity,
+                search=search,
+                package=package,
+                branch=branch,
+                limit=limit,
+                offset=(page - 1) * limit,
+            )
+            _decorate_findings(conn, rows)
+            return {"items": rows, "total": total, "page": page, "limit": limit}
+
+        # Workflow and patch evidence are derived after joining persisted triage
+        # data, so apply these filters before pagination rather than filtering a
+        # single page in the browser.
+        candidates: list[dict] = []
+        offset = 0
+        batch_size = 1000
+        while True:
+            batch, source_total = db.list_findings(
+                conn,
+                status=config.OPEN_STATUS,
+                severity=severity,
+                search=search,
+                package=package,
+                branch=branch,
+                limit=batch_size,
+                offset=offset,
+            )
+            if not batch:
+                break
+            _decorate_findings(conn, batch)
+            candidates.extend(batch)
+            offset += len(batch)
+            if offset >= source_total:
+                break
+
+        filtered = []
+        for finding in candidates:
+            triage_record = finding.get("triage") or {}
+            patch = finding.get("patch_availability") or {}
+            if triage_status and str(triage_record.get("triage_status") or "open").lower() != triage_status.lower():
+                continue
+            if resolution_status and str(triage_record.get("resolution_status") or finding.get("status") or "").lower() != resolution_status.lower():
+                continue
+            if owner and owner.lower() not in str(triage_record.get("owner") or "").lower():
+                continue
+            if fixed_version and fixed_version.lower() not in str(finding.get("fixed_version") or "").lower():
+                continue
+            if patch_state == "available" and not patch.get("available"):
+                continue
+            if patch_state == "unavailable" and (not patch.get("applicable") or patch.get("available")):
+                continue
+            if patch_state == "unknown" and patch.get("available"):
+                continue
+            filtered.append(finding)
+
+        total = len(filtered)
+        start_at = max(page - 1, 0) * limit
+        return {"items": filtered[start_at:start_at + limit], "total": total, "page": page, "limit": limit}
 
 
 @app.get("/api/cves/{cve_id}")
@@ -461,21 +518,18 @@ def get_cve_deep(cve_id: str, branch: str = "", spec: str = "") -> dict:
     """The Deep view: files inside the package tarball that this CVE touches."""
     cve_id = cve_id.upper()
     with db.session() as conn:
-        finding = db.get_finding(conn, cve_id, spec_path=spec or None) if spec else None
-        if finding is not None and finding.get("status") != config.OPEN_STATUS:
-            finding = None
+        results = [
+            f for f in db.findings_for_cve(conn, cve_id)
+            if f.get("status") == config.OPEN_STATUS
+        ]
+        if branch:
+            results = [f for f in results if f.get("branch") == branch]
+        if spec:
+            results = [f for f in results if f.get("spec_path") == spec]
+        finding = results[0] if results else None
         if finding is None:
-            results = [
-                f for f in db.findings_for_cve(conn, cve_id)
-                if f.get("status") == config.OPEN_STATUS
-            ]
-            if branch:
-                results = [f for f in results if f.get("branch") == branch] or results
-            finding = results[0] if results else None
-        if finding is None:
-            raise HTTPException(status_code=404, detail="CVE not found in the current scan")
+            raise HTTPException(status_code=404, detail="CVE/package/branch combination not found in the current scan")
         return triage.deep_view(finding, _package_for(conn, finding))
-
 
 
 # -- VulnerabilityData feed (pre-computed NVD inventory) ---------------------
@@ -554,6 +608,18 @@ def get_triage_list(
     return {"items": rows, "total": total, "page": page, "limit": limit}
 
 
+@app.get("/api/triage/comments")
+def get_triage_comments(
+    cve_id: str = Query(..., min_length=4, max_length=32),
+    branch: str = "",
+    spec_path: str = "",
+) -> dict:
+    """Read the persisted comment/dispute history for one finding."""
+    with db.session() as conn:
+        comments = db.finding_comments(conn, cve_id.upper(), branch, spec_path)
+    return {"items": comments, "total": len(comments)}
+
+
 @app.post("/api/triage/comment")
 def add_triage_comment(payload: CommentRequest, request: Request) -> dict:
     """Admin-only triage comment on a specific finding."""
@@ -578,6 +644,14 @@ def raise_dispute(payload: DisputeRequest, request: Request) -> dict:
     reason = (payload.reason or "").strip()
     if not reason:
         raise HTTPException(status_code=400, detail="A dispute needs a reason")
+    version = (payload.first_unaffected_version or "").strip()
+    if payload.never_applicable:
+        reason += "\nApplicability: Never Applicable"
+    elif version:
+        import re
+        if not re.fullmatch(r"[A-Za-z0-9._+~^-]+", version):
+            raise HTTPException(status_code=400, detail="First unaffected version contains unsupported characters")
+        reason += f"\nFirst unaffected version: {version}"
     cve_id = payload.cve_id.upper()
     with db.session() as conn:
         comment = db.add_finding_comment(
@@ -591,17 +665,23 @@ def raise_dispute(payload: DisputeRequest, request: Request) -> dict:
     return {"comment": comment, "triage": record}
 
 
+@app.post("/api/triage/google-pr")
 @app.post("/api/triage/github-pr")
 def set_github_pr(payload: GithubPRRequest, request: Request) -> dict:
     """Set the GitHub CVE PR. Allowed for the automation identity and admin."""
     role = require_pr_setter(request)
     number = (payload.number or "").strip().lstrip("#")
-    if not number:
-        raise HTTPException(status_code=400, detail="PR number is required")
+    if not number.isdigit():
+        raise HTTPException(status_code=400, detail="PR number must contain digits only")
     cve_id = payload.cve_id.upper()
     url = (payload.url or "").strip() or (
         f"https://github.com/{config.PATCH_TARGET_REPO}/pull/{number}"
     )
+    # A URL is only an association, not proof of a fix. Restrict it to a
+    # canonical GitHub pull-request URL and require the path number to match.
+    import re
+    if not re.fullmatch(r"https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/pull/" + re.escape(number) + r"/?", url):
+        raise HTTPException(status_code=400, detail="Use a GitHub pull request URL whose number matches the PR number field")
     identity = config.identity_for(role).get("identity") or role
     with db.session() as conn:
         record = db.upsert_triage(
@@ -616,6 +696,15 @@ def set_github_pr(payload: GithubPRRequest, request: Request) -> dict:
             resolution_status="in_progress",
             owner=config.ADMIN_EMAIL or config.ADMIN_IDENTITY,
         )
+    if request.url.path.endswith("/google-pr"):
+        # Backward-compatible response names for the original automation client.
+        record = {
+            **record,
+            "google_pr_number": record.get("github_pr_number", ""),
+            "google_pr_url": record.get("github_pr_url", ""),
+            "google_pr_set_by": record.get("github_pr_set_by", ""),
+            "google_pr_set_at": record.get("github_pr_set_at", ""),
+        }
     return {"triage": record, "role": role, "identity": identity}
 
 
