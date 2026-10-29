@@ -7,8 +7,8 @@
 #
 # Deploy: Render dashboard -> New -> Blueprint -> pick this repo. Render reads
 # this file and prompts for the two OAuth secrets (marked `sync: false`).
-# Create a GitHub OAuth App whose callback is exactly
-#   https://<your-service>.onrender.com/api/auth/github/callback
+# Create a Google OAuth client whose callback is exactly
+#   https://<your-service>.onrender.com/api/auth/google/callback
 services:
   - type: web
     name: vulnex
@@ -24,13 +24,10 @@ services:
       - key: PYTHON_VERSION
         value: "3.11.9"
       # GitHub is the only admin sign-in method. Set the OAuth app's callback to
-      # this service's /api/auth/github/callback.
-      - key: VULNEX_ADMIN_GITHUB
-        value: akhila-dev5
-      - key: GITHUB_OAUTH_CLIENT_ID
+      # this service's /api/auth/google/callback.
+      - key: VULNEX_ADMIN_EMAIL
+        value: gurujuakhila.dev@gmail.com
+      - key: GOOGLE_OAUTH_CLIENT_ID
         sync: false
-      - key: GITHUB_OAUTH_CLIENT_SECRET
+      - key: GOOGLE_OAUTH_CLIENT_SECRET
         sync: false
-      # The narrowly-scoped machine identity; Render generates a strong value.
-      - key: VULNEX_AUTOMATION_KEY
-        generateValue: true
