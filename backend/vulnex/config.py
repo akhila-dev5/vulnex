@@ -79,14 +79,12 @@ ROLE_AUTOMATION = "automation"
 
 # Admin identity shown in the UI and stored on triage records. The email is a
 # display/owner value only: the admin credential is GitHub, not a password.
-ADMIN_IDENTITY = os.environ.get("VULNEX_ADMIN_IDENTITY", "gurujuakhila.dev@gmail.com")
-ADMIN_EMAIL = os.environ.get("VULNEX_ADMIN_EMAIL", "gurujuakhila.dev@gmail.com").strip().lower()
-
-# Google authentication for the sole administrator. Configure a Google OAuth
-# web client with callback ``<deployment>/api/auth/google/callback``.
-ADMIN_EMAIL_ALLOWLIST = os.environ.get(
-    "VULNEX_ADMIN_EMAIL", "gurujuakhila.dev@gmail.com"
-).strip().lower()
+# Exactly one Google account is authorized for administrator access.
+# This allow-list is intentionally fixed in code; other environment values must
+# not silently grant administrator access to an additional account.
+ADMIN_IDENTITY = "gurujuakhila.dev@gmail.com"
+ADMIN_EMAIL = "gurujuakhila.dev@gmail.com"
+ADMIN_EMAIL_ALLOWLIST = "gurujuakhila.dev@gmail.com"
 GOOGLE_OAUTH_CLIENT_ID = os.environ.get("GOOGLE_OAUTH_CLIENT_ID", "").strip()
 GOOGLE_OAUTH_CLIENT_SECRET = os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET", "").strip()
 GOOGLE_OAUTH_REDIRECT = os.environ.get("VULNEX_GOOGLE_REDIRECT", "").strip()
