@@ -21,7 +21,7 @@ from .scanner import ScanOptions, run_scan
 
 
 def _cmd_scan(args: argparse.Namespace) -> int:
-    branches = [b.strip() for b in args.branches.split(",") if b.strip()]
+    branches = ["3.0"]
     packages = {p.strip() for p in args.packages.split(",") if p.strip()} if args.packages else None
     options = ScanOptions(
         branches=branches,
@@ -111,11 +111,11 @@ def _cmd_vuln_data(args: argparse.Namespace) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="vulnex", description="Azure Linux CVE scanner")
+    parser = argparse.ArgumentParser(prog="vulnex", description="Vulnex Azure Linux CVE scanner")
     sub = parser.add_subparsers(dest="command", required=True)
 
     def add_scan(p: argparse.ArgumentParser) -> None:
-        p.add_argument("--branches", default=",".join(config.DEFAULT_BRANCHES))
+        p.add_argument("--branches", default="3.0", help="Azure Linux branch to scan (fixed to 3.0 in Vulnex)")
         p.add_argument("--packages", default="", help="Comma-separated package allow-list")
         p.add_argument("--limit", type=int, default=0, help="Max specs to scan (0 = all)")
         p.add_argument("--ecosystem", default=config.OSV_ECOSYSTEM)

@@ -1,9 +1,10 @@
 /* ==========================================================================
-   VULNEX dashboard — vanilla SPA (hash router + fetch). No build step, no CDN.
+   Vulnex dashboard — vanilla SPA (hash router + fetch). No build step, no CDN.
    ========================================================================== */
 "use strict";
 
 const API = "/api";
+
 // Set by the GitHub Pages build (vulnex export); null for the live API.
 const STATIC = window.VULNEX_STATIC || null;
 // The exported snapshot has no backend, so it is always the read-only tier.
@@ -118,9 +119,9 @@ function patchBlobUrl(specPath, branch, filename) {
 }
 
 /* ------------------------------ access tiers -----------------------------
-   VULNEX is read-only until an admin signs in. The only admin method is GitHub;
+   Vulnex is read-only until an admin signs in. The only admin method is Google;
    the server answers with an opaque session token that is kept here and sent as
-   the X-VULNEX-Key header on every request. Three roles exist:
+   the X-Vulnex-Key header on every request. Three roles exist:
      viewer      read everything, change nothing
      admin       triage, dispute, patch verdicts, PR reference, scans
      automation  a machine key that may ONLY set the GitHub CVE PR
@@ -201,7 +202,7 @@ async function api(path, opts = {}) {
   if (STATIC) return staticApi(path, opts);
   const headers = { "Content-Type": "application/json", ...(opts.headers || {}) };
   const key = storedKey();
-  if (key) headers["X-VULNEX-Key"] = key;
+  if (key) headers["X-Vulnex-Key"] = key;
   const res = await fetch(API + path, {
     ...opts,
     headers,
@@ -428,7 +429,7 @@ const TITLES = {
 };
 
 async function render() {
-  // A GitHub sign-in may hand the SPA its token on a same-document navigation
+  // A Google sign-in may hand the SPA its token on a same-document navigation
   // too, so absorb it here as well as on first load.
   if (absorbHandoffToken()) await resolveRole();
   const route = parseHash();
@@ -1424,13 +1425,13 @@ function showLoginError(message) {
 function openLoginModal() {
   const methods = (state.roleInfo && state.roleInfo.methods) || {};
   showLoginError("");
-  // GitHub is the only admin method. When it is not configured, say so plainly
+  // Google is the only admin method. When it is not configured, say so plainly
   // instead of showing a button that cannot work.
-  const githubOn = !!methods.github;
-  $("#login-github-wrap").hidden = !githubOn;
-  $("#login-unconfigured").hidden = githubOn;
-  $("#login-github-hint").textContent = githubOn
-    ? `Only @${methods.github_login} may sign in this way.`
+  const googleOn = !!methods.google;
+  $("#login-google-wrap").hidden = !googleOn;
+  $("#login-unconfigured").hidden = googleOn;
+  $("#login-google-hint").textContent = googleOn
+    ? `Only ${methods.google_email} may sign in as administrator.`
     : "";
   openModal("#login-modal");
 }
@@ -1528,7 +1529,7 @@ $("#share-btn")?.addEventListener("click", async () => {
 });
 
 window.addEventListener("hashchange", render);
-// A GitHub sign-in comes back as ``#vulnex_token=…``. Keep the token and clean
+// A Google sign-in comes back as ``#vulnex_token=…``. Keep the token and clean
 // the URL so it never sticks around in the address bar or session history.
 function absorbHandoffToken() {
   const handed = location.hash.match(/vulnex_token=([A-Za-z0-9_\-]+)/);

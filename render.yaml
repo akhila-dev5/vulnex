@@ -1,36 +1,32 @@
-# Render Blueprint — the live VULNEX console (JSON API + dashboard).
+# Render Blueprint — live Vulnex console with React UI and FastAPI API.
 #
-# One FastAPI/uvicorn process serves both the API and the build-free frontend
-# from the committed SQLite snapshot (data/vulnex.db). No database server, no
-# build step, no Node. The `free` plan is enough for a low-traffic security
-# dashboard; Render sleeps an idle free service and wakes it on the next request.
+# One FastAPI/uvicorn process serves the API and the Vite-built React interface.
+# The current database stays the existing SQLite snapshot; this PR does not migrate
+# persistence to managed PostgreSQL. Render free instances may sleep while idle.
 #
 # Deploy: Render dashboard -> New -> Blueprint -> pick this repo. Render reads
-# this file and prompts for the two OAuth secrets (marked `sync: false`).
-# Create a GitHub OAuth App whose callback is exactly
-#   https://<your-service>.onrender.com/api/auth/github/callback
+# this file and prompts for Google OAuth credentials (marked `sync: false`).
+# Create a Google OAuth client whose callback is exactly
+#   https://<your-service>.onrender.com/api/auth/google/callback
 services:
   - type: web
     name: vulnex
     runtime: python
     plan: free
     region: oregon
-    rootDir: backend
-    buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn vulnex.api:app --host 0.0.0.0 --port $PORT
+    rootDir: .
+    buildCommand: cd frontend && npm install && npm run build && cd ../backend && pip install -r requirements.txt
+    startCommand: cd backend && uvicorn vulnex.api:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /api/health
     autoDeployTrigger: checksPass
     envVars:
       - key: PYTHON_VERSION
         value: "3.11.9"
-      # GitHub is the only admin sign-in method. Set the OAuth app's callback to
-      # this service's /api/auth/github/callback.
-      - key: VULNEX_ADMIN_GITHUB
-        value: akhila-dev5
-      - key: GITHUB_OAUTH_CLIENT_ID
+      # Google is the only admin sign-in method. Set the OAuth client's callback to
+      # this service's /api/auth/google/callback.
+      - key: VULNEX_ADMIN_EMAIL
+        value: gurujuakhila.dev@gmail.com
+      - key: GOOGLE_OAUTH_CLIENT_ID
         sync: false
-      - key: GITHUB_OAUTH_CLIENT_SECRET
+      - key: GOOGLE_OAUTH_CLIENT_SECRET
         sync: false
-      # The narrowly-scoped machine identity; Render generates a strong value.
-      - key: VULNEX_AUTOMATION_KEY
-        generateValue: true

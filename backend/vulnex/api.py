@@ -35,15 +35,15 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(
-    title="VULNEX API",
+    title="Vulnex API",
     version=__version__,
-    description="Azure Linux CVE scanner and security dashboard API.",
+    description="Vulnex Azure Linux CVE triage API.",
     lifespan=lifespan,
 )
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=config.ALLOWED_ORIGINS,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -187,7 +187,7 @@ def require_admin(request: Request) -> str:
         raise HTTPException(
             status_code=401,
             detail="Read-only access: this action needs an admin sign-in. "
-                   "Sign in with GitHub and retry.",
+                   "Sign in with Google and retry.",
         )
     return role
 
@@ -272,8 +272,8 @@ def get_role(request: Request) -> dict:
         "role": role,
         "identity": config.identity_for(role),
         "methods": {
-            "github": config.github_login_configured(),
-            "github_login": config.ADMIN_GITHUB,
+            "google": config.google_login_configured(),
+            "google_email": config.ADMIN_EMAIL_ALLOWLIST,
         },
         "expires_at": session["expires_at"] if session else None,
         **capabilities(role),
@@ -282,51 +282,39 @@ def get_role(request: Request) -> dict:
 
 # -- authentication ---------------------------------------------------------
 def _callback_url(request: Request) -> str:
-    """The GitHub OAuth redirect URI (override it behind a reverse proxy)."""
-    return config.GITHUB_OAUTH_REDIRECT or str(request.url_for("auth_github_callback"))
+    """The Google OAuth redirect URI (override it behind a reverse proxy)."""
+    return config.GOOGLE_OAUTH_REDIRECT or str(request.url_for("auth_google_callback"))
 
 
 @app.post("/api/auth/logout")
 def auth_logout(request: Request) -> dict:
-    """Drop the caller's session token (a no-op for the machine key)."""
+    """Drop the caller's session token."""
     return {"signed_out": auth.sessions.drop(_presented_credential(request))}
 
 
-@app.get("/api/auth/github")
-def auth_github(request: Request) -> RedirectResponse:
-    """Start GitHub sign-in for the admin allow-list."""
-    if not config.github_login_configured():
-        raise HTTPException(
-            status_code=503,
-            detail="GitHub sign-in is not configured on this server. Set "
-                   "GITHUB_OAUTH_CLIENT_ID and GITHUB_OAUTH_CLIENT_SECRET.",
-        )
+@app.get("/api/auth/google")
+def auth_google(request: Request) -> RedirectResponse:
+    """Start Google sign-in for the configured administrator."""
+    if not config.google_login_configured():
+        raise HTTPException(status_code=503, detail="Google sign-in is not configured.")
     state = auth.new_oauth_state()
-    return RedirectResponse(auth.github_authorize_url(_callback_url(request), state))
+    return RedirectResponse(auth.google_authorize_url(_callback_url(request), state))
 
 
-@app.get("/api/auth/github/callback", name="auth_github_callback")
-def auth_github_callback(
-    request: Request, code: str = "", state: str = ""
-) -> RedirectResponse:
-    """Finish GitHub sign-in and hand the SPA its session token."""
-    if not config.github_login_configured():
-        raise HTTPException(status_code=503, detail="GitHub sign-in is not configured.")
+@app.get("/api/auth/google/callback", name="auth_google_callback")
+def auth_google_callback(request: Request, code: str = "", state: str = "") -> RedirectResponse:
+    """Finish Google sign-in after checking the provider-verified email."""
+    if not config.google_login_configured():
+        raise HTTPException(status_code=503, detail="Google sign-in is not configured.")
     if not auth.consume_oauth_state(state):
-        raise HTTPException(
-            status_code=400, detail="The GitHub sign-in link expired. Please try again."
-        )
-    user = auth.github_exchange(code, _callback_url(request))
-    login = (user or {}).get("login")
-    if not auth.github_login_allowed(login):
-        raise HTTPException(
-            status_code=403,
-            detail="This GitHub account is not allowed to sign in as admin.",
-        )
-    identity = {**config.identity_for(ROLE_ADMIN), "identity": login or config.ADMIN_IDENTITY}
-    token, _ = auth.sessions.create(identity, method="github")
-    # The token rides in the fragment, so it never reaches a server log or a
-    # Referer header on the way back to the dashboard.
+        raise HTTPException(status_code=400, detail="The Google sign-in link expired. Please try again.")
+    user = auth.google_exchange(code, _callback_url(request))
+    email = (user or {}).get("email")
+    verified = (user or {}).get("email_verified") is True
+    if not auth.google_login_allowed(email, verified):
+        raise HTTPException(status_code=403, detail="This verified Google account is not the configured administrator.")
+    identity = {**config.identity_for(ROLE_ADMIN), "identity": email, "email": email}
+    token, _ = auth.sessions.create(identity, method="google")
     return RedirectResponse(f"/#vulnex_token={token}")
 
 
@@ -712,7 +700,7 @@ def start_scan(request: Request, payload: ScanRequest | None = None) -> JSONResp
     require_admin(request)
     payload = payload or ScanRequest()
     options = ScanOptions(
-        branches=payload.branches or list(config.DEFAULT_BRANCHES),
+        branches=["3.0"],
         packages=set(payload.packages) if payload.packages else None,
         limit=payload.limit,
         verify_blobs=payload.verify_blobs,
@@ -738,9 +726,12 @@ def scan_history() -> dict:
 
 
 # -- static frontend --------------------------------------------------------
-if config.FRONTEND_DIR.exists():
+# Prefer the Vite build when deployed; fall back to the old static frontend before build.
+_REACT_BUILD_DIR = config.FRONTEND_DIR / "dist"
+_STATIC_FRONTEND_DIR = _REACT_BUILD_DIR if (_REACT_BUILD_DIR / "index.html").is_file() else config.FRONTEND_DIR
+if _STATIC_FRONTEND_DIR.exists():
     app.mount(
         "/",
-        StaticFiles(directory=str(config.FRONTEND_DIR), html=True),
+        StaticFiles(directory=str(_STATIC_FRONTEND_DIR), html=True),
         name="frontend",
     )
