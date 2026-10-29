@@ -458,7 +458,7 @@ def get_findings(
                 continue
             if patch_state == "unavailable" and (not patch.get("applicable") or patch.get("available")):
                 continue
-            if patch_state == "unknown" and patch.get("applicable") is not False:
+            if patch_state == "unknown" and patch.get("available"):
                 continue
             filtered.append(finding)
 
