@@ -232,6 +232,15 @@ class AssignmentRequest(BaseModel):
     spec_path: str | None = None
     notes: str = ""
     target_repo: str | None = None
+    assignee_email: str = ""
+
+
+ASSIGNABLE_EMAILS = {
+    "gurujuakhila.dev@gmail.com",
+    "dev1.vulnex@gmail.com",
+    "dev2.vulnex@gmail.com",
+    "dev3.vulnex@gmail.com",
+}
 
 
 class CommentRequest(BaseModel):
@@ -748,6 +757,9 @@ def get_assignments() -> dict:
 def create_assignment(payload: AssignmentRequest, request: Request) -> dict:
     require_admin(request)
     target = payload.target_repo or config.PATCH_TARGET_REPO
+    assignee = payload.assignee_email.strip().lower()
+    if assignee and assignee not in ASSIGNABLE_EMAILS:
+        raise HTTPException(status_code=400, detail="Choose an assignee from the configured demo assignment list.")
     with db.session() as conn:
         finding = db.get_finding(
             conn, payload.cve_id.upper(), payload.package_name, spec_path=payload.spec_path
@@ -755,7 +767,7 @@ def create_assignment(payload: AssignmentRequest, request: Request) -> dict:
         if not finding:
             raise HTTPException(status_code=404, detail="Finding not found")
         record = db.create_assignment(
-            conn, payload.cve_id.upper(), payload.package_name, target, payload.notes
+            conn, payload.cve_id.upper(), payload.package_name, target, payload.notes, assignee
         )
     return {
         "assignment": record,
