@@ -110,6 +110,7 @@ CREATE TABLE IF NOT EXISTS assignments (
     target_repo TEXT,
     status TEXT DEFAULT 'queued',
     notes TEXT,
+    assignee_email TEXT DEFAULT '',
     created_at TEXT,
     updated_at TEXT,
     UNIQUE(cve_id, package_name)
@@ -193,6 +194,12 @@ def connect(path: str | Path | None = None) -> sqlite3.Connection:
 
 def init_db(conn: sqlite3.Connection) -> None:
     conn.executescript(SCHEMA)
+    # Lightweight in-place migration for existing free-tier SQLite deployments.
+    assignment_columns = {
+        row["name"] for row in conn.execute("PRAGMA table_info(assignments)").fetchall()
+    }
+    if "assignee_email" not in assignment_columns:
+        conn.execute("ALTER TABLE assignments ADD COLUMN assignee_email TEXT DEFAULT ''")
     conn.commit()
 
 
@@ -623,17 +630,18 @@ def create_assignment(
     package_name: str,
     target_repo: str,
     notes: str = "",
+    assignee_email: str = "",
 ) -> dict:
     now = utcnow()
     conn.execute(
         """
-        INSERT INTO assignments (cve_id, package_name, target_repo, status, notes, created_at, updated_at)
-        VALUES (?, ?, ?, 'queued', ?, ?, ?)
+        INSERT INTO assignments (cve_id, package_name, target_repo, status, notes, assignee_email, created_at, updated_at)
+        VALUES (?, ?, ?, 'queued', ?, ?, ?, ?)
         ON CONFLICT(cve_id, package_name) DO UPDATE SET
             status='queued', notes=excluded.notes, updated_at=excluded.updated_at,
-            target_repo=excluded.target_repo
+            target_repo=excluded.target_repo, assignee_email=excluded.assignee_email
         """,
-        (cve_id, package_name, target_repo, notes, now, now),
+        (cve_id, package_name, target_repo, notes, assignee_email, now, now),
     )
     conn.commit()
     row = conn.execute(

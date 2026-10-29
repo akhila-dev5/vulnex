@@ -220,15 +220,19 @@ def test_fixed_and_ruled_out_cves_are_not_served(client):
     assert stats["distinct_cves"] == 1
 
 
-def test_release_branch_filter_includes_legacy_3_0_snapshot_branches(client):
+def test_release_branch_filter_excludes_development_branches(client):
     findings = client.get("/api/findings", params={"branch": "3.0"}).json()
     packages = client.get("/api/packages", params={"branch": "3.0"}).json()
 
-    # Existing snapshots may have been collected from 3.0-dev and fasttrack/3.0.
-    # The user-facing 3.0 filter must still return those records.
-    assert findings["total"] == 1
-    assert findings["items"][0]["branch"] == "3.0-dev"
-    assert packages["total"] == 2
+    # Fixtures contain only 3.0-dev records. Stable 3.0 filters must not mix them in.
+    assert findings["total"] == 0
+    assert packages["total"] == 0
+
+
+def test_scan_request_rejects_development_and_fasttrack_branches(client, admin):
+    for branch in ("3.0-dev", "fasttrack/3.0", "4.0-dev", "fasttrack/4.0"):
+        response = client.post("/api/scan", headers=admin, json={"branches": [branch]})
+        assert response.status_code == 400
 
 
 def test_scan_request_uses_selected_fork_branch_and_ecosystem(client, admin, monkeypatch):
@@ -241,11 +245,14 @@ def test_scan_request_uses_selected_fork_branch_and_ecosystem(client, admin, mon
     assert captured["options"].ecosystem == "Azure Linux:4"
 
 
-def test_scan_request_rejects_mixed_release_families(client, admin, monkeypatch):
+def test_scan_request_accepts_both_stable_release_branches(client, admin, monkeypatch):
     from vulnex import api
-    monkeypatch.setattr(api.manager, "start", lambda options: True)
+    captured = {}
+    monkeypatch.setattr(api.manager, "start", lambda options: captured.update(options=options) or True)
     response = client.post("/api/scan", headers=admin, json={"branches": ["3.0", "4.0"]})
-    assert response.status_code == 400
+    assert response.status_code == 202
+    assert captured["options"].branches == ["3.0", "4.0"]
+    assert captured["options"].ecosystem == "Azure Linux:3+Azure Linux:4"
 
 
 def test_patch_not_available_filter_returns_findings_without_candidate(client):
@@ -260,7 +267,6 @@ def test_patch_not_available_filter_returns_findings_without_candidate(client):
         conn.close()
 
     response = client.get("/api/findings", params={
-        "branch": "3.0",
         "patch_state": "unavailable",
     })
     assert response.status_code == 200
@@ -302,6 +308,33 @@ def test_assignment_flow(client, admin):
     assert body["target_repo"] == config.PATCH_TARGET_REPO
     listing = client.get("/api/assignments").json()
     assert len(listing["items"]) == 1
+
+
+def test_assignment_persists_allowed_assignee(client, admin):
+    created = client.post(
+        "/api/assignments",
+        headers=admin,
+        json={
+            "cve_id": "CVE-2024-0500",
+            "package_name": "demo",
+            "assignee_email": "gurujuakhila.dev@gmail.com",
+        },
+    )
+    assert created.status_code == 200
+    assert created.json()["assignment"]["assignee_email"] == "gurujuakhila.dev@gmail.com"
+
+
+def test_assignment_rejects_unlisted_assignee(client, admin):
+    response = client.post(
+        "/api/assignments",
+        headers=admin,
+        json={
+            "cve_id": "CVE-2024-0500",
+            "package_name": "demo",
+            "assignee_email": "someone@example.com",
+        },
+    )
+    assert response.status_code == 400
 
 
 def test_assignment_rejects_unknown_finding(client, admin):

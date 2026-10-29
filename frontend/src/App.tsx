@@ -23,6 +23,7 @@ type Finding = {
   spec_path: string; severity?: string; cvss_score?: number | null; description?: string;
   status?: string; detected_on?: string; fixed_version?: string; advisory_id?: string; source?: string; triage?: Record<string, unknown> | null;
   patch_availability?: { applicable?: boolean; available?: boolean; ai_verdict?: string; final_verdict?: string; possible_links?: string[]; analysis?: string[]; patch_link?: string; available_since?: string };
+  assignment?: { assignee_email?: string; status?: string; notes?: string } | null;
 };
 type PageResult<T> = { items: T[]; total: number; page?: number; limit?: number };
 type FindingComment = { id?: number; kind?: string; author?: string; body?: string; created_at?: string };
@@ -74,7 +75,7 @@ function App() {
   const [toast, setToast] = useState("");
   const [activeTab, setActiveTab] = useState<"triage" | "affected" | "packages">("triage");
   const [expandedKey, setExpandedKey] = useState("");
-  const [modal, setModal] = useState<"dispute" | "comment" | "patch" | "pr" | null>(null);
+  const [modal, setModal] = useState<"dispute" | "comment" | "patch" | "pr" | "assign" | null>(null);
   const [actionMenuKey, setActionMenuKey] = useState("");
   const [commentHistory, setCommentHistory] = useState<Record<string, FindingComment[]>>({});
   const [historyLoadingKey, setHistoryLoadingKey] = useState("");
@@ -98,6 +99,8 @@ function App() {
   const [availableSince, setAvailableSince] = useState("");
   const [prNumber, setPrNumber] = useState("");
   const [prUrl, setPrUrl] = useState("");
+  const [assigneeEmail, setAssigneeEmail] = useState("gurujuakhila.dev@gmail.com");
+  const [assignmentNotes, setAssignmentNotes] = useState("");
   const [scanStatus, setScanStatus] = useState("idle");
   const [packageRows, setPackageRows] = useState<Array<{name: string; version?: string; branch?: string; spec_path?: string}>>([]);
   const [packageTotal, setPackageTotal] = useState(0);
@@ -195,6 +198,9 @@ function App() {
   };
 
   const openDetail = async (cveId: string) => {
+    if (!cveId) return;
+    if (window.location.hash !== "#/cve/" + cveId) window.history.pushState({}, "", "#/cve/" + cveId);
+    setDeepTarget(null); setDeepData(null);
     setDetail(null); setDetailError(""); setDetailBusy(true);
     try {
       const data = await request<CveDetail>(`/cves/${encodeURIComponent(cveId)}?enrich=false`, {}, token);
@@ -203,11 +209,38 @@ function App() {
     finally { setDetailBusy(false); }
   };
 
+  // Support shareable CVE URLs and browser back/forward navigation.
+  useEffect(() => {
+    const syncCveRoute = () => {
+      const match = window.location.hash.match(/^#\/cve\/(CVE-[A-Za-z0-9-]+)$/i);
+      if (match) {
+        void openDetail(decodeURIComponent(match[1]).toUpperCase());
+      } else {
+        setDetail(null);
+        setDetailError("");
+      }
+    };
+    const initial = window.location.hash.match(/^#\/cve\/(CVE-[A-Za-z0-9-]+)$/i);
+    if (initial) void openDetail(decodeURIComponent(initial[1]).toUpperCase());
+    window.addEventListener("hashchange", syncCveRoute);
+    window.addEventListener("popstate", syncCveRoute);
+    return () => {
+      window.removeEventListener("hashchange", syncCveRoute);
+      window.removeEventListener("popstate", syncCveRoute);
+    };
+  }, []);
+
   const submitTriage = async () => {
     if (!target || !modal) return;
     const ref = { cve_id: target.cve_id, branch: target.branch, spec_path: target.spec_path };
     const requestBody: Record<string, string> = { ...ref };
     let path = "";
+    if (modal === "assign") {
+      path = "/assignments";
+      requestBody.package_name = target.package_name;
+      requestBody.assignee_email = assigneeEmail;
+      requestBody.notes = assignmentNotes.trim();
+    }
     if (modal === "dispute") { path = "/triage/dispute"; requestBody.reason = disputeTag + ": " + formText.trim(); requestBody.first_unaffected_version = disputeVersion.trim(); requestBody.never_applicable = neverApplicable ? "true" : "false"; }
     if (modal === "comment") { path = "/triage/comment"; requestBody.body = formText.trim(); }
     if (modal === "patch") {
@@ -219,7 +252,7 @@ function App() {
     }
     try {
       await request(path, { method: "POST", body: JSON.stringify(requestBody) }, token);
-      setToast(modal === "dispute" ? "Dispute recorded" : modal === "comment" ? "Comment saved" : modal === "patch" ? "Patch verdict updated" : "GitHub PR recorded");
+      setToast(modal === "assign" ? "Assigned " + target.cve_id + " to " + assigneeEmail : modal === "dispute" ? "Dispute recorded" : modal === "comment" ? "Comment saved" : modal === "patch" ? "Patch verdict updated" : "GitHub PR recorded");
       setModal(null); setTarget(null); setFormText(""); await load();
     } catch (e) { setToast(messageOf(e)); }
   };
@@ -233,13 +266,15 @@ function App() {
     } catch (e) { setScanStatus("idle"); setToast(messageOf(e)); }
   };
 
-  const openAction = (action: "dispute" | "comment" | "patch" | "pr", row: Finding) => {
+  const openAction = (action: "dispute" | "comment" | "patch" | "pr" | "assign", row: Finding) => {
     setTarget(row); setModal(action); setFormText(""); setDisputeTag("UPSTREAM"); setDisputeVersion(""); setNeverApplicable(false);
     setPatchVerdict(String(row.triage?.final_verdict || ""));
     setPatchLink(row.patch_availability?.patch_link || "");
     setAvailableSince(String(row.patch_availability?.available_since || ""));
     setPrNumber(String(row.triage?.github_pr_number || ""));
     setPrUrl(String(row.triage?.github_pr_url || ""));
+    setAssigneeEmail("gurujuakhila.dev@gmail.com");
+    setAssignmentNotes("");
   };
 
   return (
@@ -260,7 +295,7 @@ function App() {
         </nav>
         <div className="sidebar-bottom">
           <div className="source-mini"><Activity size={16} /><span>Azure Linux source</span><b>3.0</b></div>
-          <small>Read-only for guests · Admin triage enabled</small>
+          <small>Only stable 3.0 and 4.0 branches · Admin triage enabled</small>
         </div>
       </aside>
 
@@ -269,7 +304,7 @@ function App() {
           <div className="mobile-brand"><ShieldCheck size={20} /><b>Vulnex</b></div>
           <div className="heading">
             <h1>{activeTab === "triage" ? "Security overview" : activeTab === "affected" ? "Affected findings" : "Package inventory"}</h1>
-            <p>Security findings, patch evidence and review history from azurelinux-test branch {branch}.</p>
+            <p>Security findings, patch evidence and review history from your azurelinux-test fork · stable branch {branch}.</p>
           </div>
           <div className="top-actions">
             <StatusPill tone={canWrite ? "good" : "neutral"}>{canWrite ? "Administrator" : "Guest · read-only"}</StatusPill>
@@ -283,7 +318,7 @@ function App() {
           <article className="metric-card"><span className="metric-icon blue"><Package size={18} /></span><small>Packages scanned</small><strong>{(stats.total_packages ?? 0).toLocaleString()}</strong><span>Selected branch: {branch}</span></article>
           <article className="metric-card"><span className="metric-icon red"><ShieldAlert size={18} /></span><small>Open findings</small><strong>{(stats.total_findings ?? total).toLocaleString()}</strong><span>Current snapshot</span></article>
           <article className="metric-card"><span className="metric-icon amber"><AlertTriangle size={18} /></span><small>High severity</small><strong>{((stats.severity?.critical ?? 0) + (stats.severity?.high ?? 0)).toLocaleString()}</strong><span>Critical + high</span></article>
-          <article className="metric-card"><span className="metric-icon green"><CheckCircle2 size={18} /></span><small>Last completed scan</small><strong>{stats.last_scan?.finished_at ? new Date(stats.last_scan.finished_at).toLocaleDateString() : "—"}</strong><span>{stats.last_scan?.branches || "3.0 only"}</span></article>
+          <article className="metric-card"><span className="metric-icon green"><CheckCircle2 size={18} /></span><small>Last completed scan</small><strong>{stats.last_scan?.finished_at ? new Date(stats.last_scan.finished_at).toLocaleDateString() : "—"}</strong><span>{stats.last_scan?.branches || "Stable 3.0 / 4.0 only"}</span></article>
         </section>
 
         <section className="toolbar-panel">
@@ -291,7 +326,7 @@ function App() {
           <label className="filter-select"><Filter size={15} /><span>Severity</span><select value={severity} onChange={e => { setSeverity(e.target.value); setPage(1); }}><option value="all">All severities</option><option value="critical">Critical</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option><option value="unknown">Unknown</option></select></label>
           <label className="filter-select"><SlidersHorizontal size={15} /><span>Branch</span><select value={branch} onChange={e => { setBranch(e.target.value); setPage(1); }}><option value="3.0">3.0</option><option value="4.0">4.0</option></select></label>
           <label className="filter-select"><span>Patch</span><select value={patchFilter} onChange={e => { setPatchFilter(e.target.value); setPage(1); }}><option value="all">Any patch state</option><option value="available">Patch available</option><option value="unavailable">Patch not available</option></select></label>
-          <label className="filter-select"><span>Triage</span><select value={triageFilter} onChange={e => { setTriageFilter(e.target.value); setPage(1); }}><option value="all">Any triage</option><option value="open">Open</option><option value="in_progress">In progress</option><option value="triaged">Triaged</option><option value="disputed">Disputed</option></select></label>
+          <label className="filter-select"><span>Triage</span><select value={triageFilter} onChange={e => { setTriageFilter(e.target.value); setPage(1); }}><option value="all">Any triage</option><option value="open">Open</option><option value="in_progress">In progress</option><option value="completed">Completed</option><option value="disputed">Disputed</option></select></label>
           <label className="filter-select"><span>Resolution</span><select value={resolutionFilter} onChange={e => { setResolutionFilter(e.target.value); setPage(1); }}><option value="all">Any resolution</option><option value="affected">Affected</option><option value="disputed">Disputed</option><option value="in_progress">In progress</option><option value="published">Published</option></select></label>
           <button className="btn secondary" onClick={() => { setQuery(""); setSeverity("all"); setBranch("3.0"); setPatchFilter("all"); setTriageFilter("all"); setResolutionFilter("all"); setPage(1); }}><X size={15} /> Clear filters</button>
           <button className="btn secondary" onClick={refresh}><RefreshCw size={15} /> Apply</button>
@@ -300,7 +335,7 @@ function App() {
         {error && <div className="alert error"><AlertCircle size={17} />{error}</div>}
         <section className="table-card">
           <div className="table-head">
-            <div><h2>{activeTab === "triage" ? "Triage queue" : activeTab === "affected" ? "Affected findings" : "Packages"}</h2><p>{total.toLocaleString()} result{total === 1 ? "" : "s"} · Azure Linux 3.0</p></div>
+            <div><h2>{activeTab === "triage" ? "Triage queue" : activeTab === "affected" ? "Affected findings" : "Packages"}</h2><p>{total.toLocaleString()} result{total === 1 ? "" : "s"} · azurelinux-test · branch {branch}</p></div>
             <div className="head-meta"><span><Clock3 size={14} /> {stats.last_scan?.finished_at ? new Date(stats.last_scan.finished_at).toLocaleString() : "Waiting for first scan"}</span><button className="icon-btn" onClick={runScan} disabled={!canWrite || scanStatus === "running"} title={`Scan branch ${branch} from azurelinux-test`}><Activity size={16} /></button></div>
           </div>
           {busy ? <div className="empty-state"><RefreshCw className="spin" /> Loading vulnerability records…</div>
@@ -310,7 +345,7 @@ function App() {
           </table></div>
           : rows.length === 0 ? <div className="empty-state"><FileSearch size={26} /><strong>No findings in this view</strong><span>Try another search or run a fresh scan for branch 3.0.</span></div>
           : <div className="table-scroll"><table>
-            <thead><tr><th>Vulnerability / package</th><th>Branch</th><th>Severity</th><th>Patch availability</th><th>Triage status</th><th>Resolution</th><th>Fixed version</th><th>Source ID</th><th>Owner</th><th>Actions</th><th /></tr></thead>
+            <thead><tr><th>Vulnerability / package</th><th>Branch</th><th>Severity</th><th>Patch availability</th><th>Resolution</th><th>Fixed version</th><th>Owner</th><th>Actions</th><th /></tr></thead>
             <tbody>{rows.map(row => {
               const key = [row.cve_id, row.branch, row.spec_path].join("::");
               const triage = row.triage || {};
@@ -319,9 +354,10 @@ function App() {
                   <td><button className="link-button" onClick={() => void openDetail(row.cve_id)}><strong>{row.cve_id}</strong><small>{row.package_name || "Unknown package"} · {row.package_version || "version unavailable"}</small></button></td>
                   <td><code>{row.branch}</code></td><td><StatusPill tone={severityClass(row.severity)}>{row.severity || "Unknown"}</StatusPill></td>
                   <td><StatusPill tone={row.patch_availability?.available ? "good" : row.patch_availability?.applicable === false ? "neutral" : "warning"}>{row.patch_availability?.available ? "Candidate found" : row.patch_availability?.applicable === false ? "Not applicable" : "Unknown"}</StatusPill>{row.patch_availability?.patch_link && <a className="sub-link" href={row.patch_availability.patch_link} target="_blank" rel="noopener noreferrer">Evidence link <ArrowUpRight size={12} /></a>}</td>
-                  <td>{String(triage.triage_status || "Untriaged")}</td><td>{String(triage.resolution_status || row.status || "Unknown")}</td><td>{row.fixed_version || "Not available"}</td><td>{row.advisory_id || row.source || "Not available"}</td><td>{String(triage.owner || "—")}</td>
+                  <td>{String(triage.resolution_status || row.status || "Unknown")}</td><td>{row.fixed_version || "—"}</td><td>{row.assignment?.assignee_email || String(triage.owner || "—")}</td>
                   <td><div className="action-wrap">
                     <button className="btn action-btn" onClick={() => void openDeep(row)}><FileSearch size={14} /> Deep</button>
+                    <button className="btn action-btn" disabled={!canAdmin} onClick={() => openAction("assign", row)}>Assign</button>
                     <button className="btn action-btn" aria-expanded={actionMenuKey === key} onClick={() => setActionMenuKey(actionMenuKey === key ? "" : key)}>Actions <ChevronDown size={13} /></button>
                     {actionMenuKey === key && <div className="action-popover" role="menu">
                       <button role="menuitem" disabled={!canAdmin} onClick={() => { setActionMenuKey(""); openAction("pr", row); }}><GitPullRequest size={14} /> Set GitHub PR</button>
@@ -330,7 +366,7 @@ function App() {
                   </div></td>
                   <td><button className="icon-btn" onClick={() => void toggleExpanded(row, key)} aria-label="Expand row">{expandedKey === key ? <ChevronDown size={16} /> : <ChevronRight size={16} />}</button></td>
                 </tr>
-                {expandedKey === key && <tr className="expanded"><td colSpan={11}>
+                {expandedKey === key && <tr className="expanded"><td colSpan={9}>
                   <div className="expanded-grid">
                     <div><small>Patch evidence</small><strong>{row.patch_availability?.available ? "Candidate patch link found — not independently verified" : "Insufficient evidence to confirm a patch"}</strong><small>Source package specification</small>{row.spec_path ? <a href={`https://github.com/akhila-dev5/azurelinux-test/blob/${encodeURIComponent(row.branch)}/${row.spec_path}`} target="_blank" rel="noopener noreferrer">{row.spec_path}</a> : <span>Not available</span>}</div>
                     <div><small>Finding</small><strong>{row.cve_id}</strong><p>{row.description || "The approved source does not provide a description for this finding."}</p><small>Recorded patch result</small>{row.patch_availability?.patch_link ? <a href={row.patch_availability.patch_link} target="_blank" rel="noopener noreferrer">{row.patch_availability.patch_link}</a> : <span>Not recorded</span>}</div>
@@ -344,9 +380,9 @@ function App() {
         </section>
       </main>
 
-      {(deepTarget || detailBusy || detail || detailError) && <div className="modal-backdrop" role="presentation" onClick={e => { if (e.target === e.currentTarget) { setDeepTarget(null); setDetail(null); setDetailError(""); } }}>
+      {(deepTarget || detailBusy || detail || detailError) && <div className="modal-backdrop" role="presentation" onClick={e => { if (e.target === e.currentTarget) { setDeepTarget(null); setDetail(null); setDetailError(""); if (window.location.hash.startsWith("#/cve/")) window.history.pushState({}, "", "#/"); } }}>
         <section className="modal-card wide-modal" role="dialog" aria-modal="true" aria-labelledby="detail-modal-title">
-          <button className="modal-close icon-btn" aria-label="Close" onClick={() => { setDeepTarget(null); setDeepData(null); setDetail(null); setDetailError(""); }}><X size={16} /></button>
+          <button className="modal-close icon-btn" aria-label="Close" onClick={() => { setDeepTarget(null); setDeepData(null); setDetail(null); setDetailError(""); if (window.location.hash.startsWith("#/cve/")) window.history.pushState({}, "", "#/"); }}><X size={16} /></button>
           {deepTarget ? <>
             <small>DEEP INSPECTION · {deepTarget.branch}</small><h2 id="detail-modal-title">{deepTarget.cve_id} · {deepTarget.package_name}</h2>
             {deepBusy ? <div className="empty-state"><RefreshCw className="spin" /> Loading affected-file evidence…</div>
@@ -358,12 +394,12 @@ function App() {
                 {deepData?.notes?.length ? <section><h3>Evidence notes</h3><ul>{deepData.notes.map((note, i) => <li key={i}>{note}</li>)}</ul></section> : null}
               </div>}
           </> : <>
-            <small>VULNEX CVE RECORD</small><h2 id="detail-modal-title">{detail?.cve_id || "CVE details"}</h2>
+            <small>VULNEX CVE RECORD</small><h2 id="detail-modal-title">{detail?.cve_id || "CVE details"}</h2><p className="detail-url">Shareable record URL: <code>{window.location.origin}/#/cve/{detail?.cve_id || ""}</code></p>
             {detailBusy ? <div className="empty-state"><RefreshCw className="spin" /> Loading CVE details…</div>
               : detailError ? <div className="alert error"><AlertCircle size={16} />{detailError}</div>
               : <div className="detail-sections">
                 <section><h3>Severity and description</h3>{detail?.findings?.map((f, i) => <div className="evidence-row" key={f.spec_path || i}><span><StatusPill tone={severityClass(f.severity)}>{f.severity || "Unknown"}{f.cvss_score != null ? ` · ${f.cvss_score}` : ""}</StatusPill><strong>{f.package_name} {f.package_version || ""}</strong></span><code>{f.branch}</code></div>)}<p>{detail?.enrichment?.description || detail?.findings?.[0]?.description || "Description not available from the approved source."}</p></section>
-                <section><h3>External references</h3><div className="evidence-list">{(detail?.links || []).map(link => <div key={link.label}><span>{link.label}</span><a href={link.url} target="_blank" rel="noopener noreferrer">Open reference <ArrowUpRight size={12} /></a></div>)}</div></section>
+                <section><h3>External references</h3><div className="tracker-links">{(detail?.links || []).map(link => <a key={link.label} href={link.url} target="_blank" rel="noopener noreferrer">{link.label} <ArrowUpRight size={12} /></a>)}</div></section>
                 <section><h3>Patch evidence</h3>{detail?.findings?.map((f, i) => <div key={f.spec_path || i} className="evidence-row"><span>{f.package_name} · {f.branch}</span>{f.patch_availability?.patch_link ? <a href={f.patch_availability.patch_link} target="_blank" rel="noopener noreferrer">Open recorded link <ArrowUpRight size={12} /></a> : <span className="muted">No link recorded</span>}</div>)}</section>
               </div>}
           </>}
@@ -373,7 +409,17 @@ function App() {
         <section className="modal-card" role="dialog" aria-modal="true" aria-labelledby="modal-title">
           <button className="modal-close icon-btn" aria-label="Close" onClick={() => setModal(null)}><X size={16} /></button>
           <small>TRIAGE ACTION · {target.cve_id}</small>
-          <h2 id="modal-title">{modal === "dispute" ? "Dispute finding" : modal === "comment" ? "Add triage comment" : modal === "patch" ? "Patch availability" : "Set GitHub pull request"}</h2>
+          <h2 id="modal-title">{modal === "assign" ? "Assign CVE to a reviewer" : modal === "dispute" ? "Dispute finding" : modal === "comment" ? "Add triage comment" : modal === "patch" ? "Patch availability" : "Set GitHub pull request"}</h2>
+          {modal === "assign" && <>
+            <p>Assign <strong>{target.cve_id}</strong> · {target.package_name} to a reviewer.</p>
+            <label>Assignee email<select value={assigneeEmail} onChange={e => setAssigneeEmail(e.target.value)}>
+              <option value="gurujuakhila.dev@gmail.com">gurujuakhila.dev@gmail.com (Admin / Dev)</option>
+              <option value="dev1.vulnex@gmail.com">dev1.vulnex@gmail.com</option>
+              <option value="dev2.vulnex@gmail.com">dev2.vulnex@gmail.com</option>
+              <option value="dev3.vulnex@gmail.com">dev3.vulnex@gmail.com</option>
+            </select></label>
+            <label>Assignment notes<textarea value={assignmentNotes} onChange={e => setAssignmentNotes(e.target.value)} rows={3} placeholder="Optional context for the assigned reviewer…" /></label>
+          </>}
           {modal === "dispute" ? <>
             <label>Dispute reason<select value={disputeTag} onChange={e => setDisputeTag(e.target.value)}><option value="UPSTREAM">Upstream says not affected</option><option value="VERSION">Version not affected</option><option value="BACKPORT">Fix already backported</option><option value="CONFIGURATION">Vulnerable feature/configuration not used</option><option value="OTHER">Other evidence</option></select></label>
             <label>Supporting details<textarea value={formText} onChange={e => setFormText(e.target.value)} rows={4} placeholder="Explain the evidence supporting this dispute…" /></label>
@@ -382,7 +428,7 @@ function App() {
           </> : modal === "comment" ? <label>Comment<textarea value={formText} onChange={e => setFormText(e.target.value)} rows={5} placeholder="Add a comment to the triage history…" /></label> : null}
           {modal === "patch" && <><label>Final verdict<select value={patchVerdict} onChange={e => setPatchVerdict(e.target.value)}><option value="">No override</option><option>Patch Available</option><option>No Patch Found</option></select></label><label>Patch link<input value={patchLink} onChange={e => setPatchLink(e.target.value)} /></label><label>Available since<input type="date" value={availableSince} onChange={e => setAvailableSince(e.target.value)} /></label></>}
           {modal === "pr" && <><label>PR number<input value={prNumber} onChange={e => setPrNumber(e.target.value)} placeholder="19015" /></label><label>PR URL (optional)<input value={prUrl} onChange={e => setPrUrl(e.target.value)} placeholder="https://github.com/…" /></label></>}
-          <div className="modal-actions"><button className="btn secondary" onClick={() => setModal(null)}>Cancel</button><button className="btn primary" onClick={submitTriage} disabled={!canAdmin || ((modal === "comment" || modal === "dispute") && !formText.trim())}>Save changes</button></div>
+          <div className="modal-actions"><button className="btn secondary" onClick={() => setModal(null)}>Cancel</button><button className="btn primary" onClick={submitTriage} disabled={!canAdmin || ((modal === "comment" || modal === "dispute") && !formText.trim())}>{modal === "assign" ? "Assign CVE" : "Save changes"}</button></div>
         </section>
       </div>}
       {toast && <div className="toast" role="status"><CheckCircle2 size={16} />{toast}<button onClick={() => setToast("")} aria-label="Dismiss"><X size={14} /></button></div>}

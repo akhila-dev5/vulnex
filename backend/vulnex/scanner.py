@@ -33,7 +33,7 @@ __all__ = ["ScanOptions", "run_scan"]
 
 @dataclass
 class ScanOptions:
-    branches: list[str] = field(default_factory=lambda: ["3.0"])
+    branches: list[str] = field(default_factory=lambda: ["3.0", "4.0"])
     packages: set[str] | None = None
     limit: int = 0
     ecosystem: str = config.OSV_ECOSYSTEM
@@ -169,6 +169,15 @@ def run_scan(
 ) -> dict:
     """Run a full scan and persist a fresh snapshot. Returns scan counts."""
     options = options or ScanOptions()
+    # Hard guard: scan only the exact stable release branches, never development
+    # or fasttrack branches. A scheduled run may include both stable releases.
+    allowed_branches = {"3.0", "4.0"}
+    invalid_branches = sorted(set(options.branches) - allowed_branches)
+    if not options.branches or invalid_branches:
+        raise ValueError(
+            "Vulnex scans only the exact 3.0 and 4.0 branches; "
+            f"invalid selection: {', '.join(invalid_branches) or '(empty)'}"
+        )
     started = time.time()
 
     def emit(message: str, **extra) -> None:
@@ -205,7 +214,10 @@ def run_scan(
         def fetch_advisories(spec: ParsedSpec) -> list:
             if not spec.evr:
                 return []
-            return osv.advisories(spec.name, options.ecosystem, spec.evr)
+            # The advisory ecosystem is release-specific even when a full
+            # 3.0 + 4.0 snapshot is collected in one scan.
+            ecosystem = "Azure Linux:4" if spec.branch == "4.0" else "Azure Linux:3"
+            return osv.advisories(spec.name, ecosystem, spec.evr)
 
         with ThreadPoolExecutor(max_workers=config.SCAN_CONCURRENCY) as pool:
             futures = {pool.submit(fetch_advisories, s): s for s in specs}

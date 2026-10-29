@@ -124,9 +124,10 @@ def _now() -> str:
 
 def _branches_for_filter(branch: str) -> list[str] | None:
     """Map release labels to branch names available in the user's azurelinux-test fork."""
+    # Only exact stable branches are included in the release filters.
     aliases = {
-        "3.0": ["3.0", "3.0-dev", "fasttrack/3.0"],
-        "4.0": ["4.0", "4.0-dev", "fasttrack/4.0"],
+        "3.0": ["3.0"],
+        "4.0": ["4.0"],
     }
     return aliases.get(branch)
 
@@ -231,6 +232,15 @@ class AssignmentRequest(BaseModel):
     spec_path: str | None = None
     notes: str = ""
     target_repo: str | None = None
+    assignee_email: str = ""
+
+
+ASSIGNABLE_EMAILS = {
+    "gurujuakhila.dev@gmail.com",
+    "dev1.vulnex@gmail.com",
+    "dev2.vulnex@gmail.com",
+    "dev3.vulnex@gmail.com",
+}
 
 
 class CommentRequest(BaseModel):
@@ -345,10 +355,15 @@ def _decorate_findings(
     enrichment: dict | None = None,
 ) -> list[dict]:
     """Attach triage state, patch availability, links and the Deep view."""
+    assignments = {
+        (item.get("cve_id"), item.get("package_name")): item
+        for item in db.list_assignments(conn)
+    }
     for finding in findings:
         finding["triage"] = db.get_triage(
             conn, finding["cve_id"], finding.get("branch", ""), finding.get("spec_path", "")
         )
+        finding["assignment"] = assignments.get((finding.get("cve_id"), finding.get("package_name")))
         triage.decorate_finding(finding, package, enrichment)
     return findings
 
@@ -468,7 +483,9 @@ def get_findings(
                 continue
             if patch_state == "available" and not patch.get("available"):
                 continue
-            if patch_state == "unavailable" and (not patch.get("applicable") or patch.get("available")):
+            # "Patch not available" means no candidate patch was found,
+            # including findings where patch applicability is not established.
+            if patch_state == "unavailable" and patch.get("available"):
                 continue
             filtered.append(finding)
 
@@ -747,6 +764,9 @@ def get_assignments() -> dict:
 def create_assignment(payload: AssignmentRequest, request: Request) -> dict:
     require_admin(request)
     target = payload.target_repo or config.PATCH_TARGET_REPO
+    assignee = payload.assignee_email.strip().lower()
+    if assignee and assignee not in ASSIGNABLE_EMAILS:
+        raise HTTPException(status_code=400, detail="Choose an assignee from the configured demo assignment list.")
     with db.session() as conn:
         finding = db.get_finding(
             conn, payload.cve_id.upper(), payload.package_name, spec_path=payload.spec_path
@@ -754,7 +774,7 @@ def create_assignment(payload: AssignmentRequest, request: Request) -> dict:
         if not finding:
             raise HTTPException(status_code=404, detail="Finding not found")
         record = db.create_assignment(
-            conn, payload.cve_id.upper(), payload.package_name, target, payload.notes
+            conn, payload.cve_id.upper(), payload.package_name, target, payload.notes, assignee
         )
     return {
         "assignment": record,
@@ -798,8 +818,8 @@ def add_assignment_comment(
 def start_scan(request: Request, payload: ScanRequest | None = None) -> JSONResponse:
     require_admin(request)
     payload = payload or ScanRequest()
-    requested_branches = payload.branches or ["3.0"]
-    allowed_branches = {"3.0", "4.0", "3.0-dev", "4.0-dev", "fasttrack/3.0", "fasttrack/4.0"}
+    requested_branches = payload.branches or ["3.0", "4.0"]
+    allowed_branches = {"3.0", "4.0"}
     invalid_branches = sorted(set(requested_branches) - allowed_branches)
     if invalid_branches:
         raise HTTPException(
@@ -808,12 +828,12 @@ def start_scan(request: Request, payload: ScanRequest | None = None) -> JSONResp
         )
     # Use the advisory ecosystem matching the selected release family. The
     # package/spec inventory itself always comes from the configured azurelinux-test fork.
-    if all(b.startswith("4.0") or b.startswith("fasttrack/4.0") for b in requested_branches):
+    if all(b == "4.0" for b in requested_branches):
         ecosystem = "Azure Linux:4"
-    elif all(b.startswith("3.0") or b.startswith("fasttrack/3.0") for b in requested_branches):
+    elif all(b == "3.0" for b in requested_branches):
         ecosystem = "Azure Linux:3"
     else:
-        raise HTTPException(status_code=400, detail="Scan only one release family at a time (3.0 or 4.0).")
+        ecosystem = "Azure Linux:3+Azure Linux:4"
     options = ScanOptions(
         branches=requested_branches,
         ecosystem=ecosystem,

@@ -158,3 +158,11 @@ td small { display:block; color:#909bad; font-size:10px; margin-top:4px; }
 
 .modal-card label.checkbox-line { display:flex; align-items:center; gap:9px; font-weight:500; color:#536279; }
 .modal-card label.checkbox-line input { width:auto; margin:0; accent-color:#315efb; }
+
+
+/* Compact, human-readable CVE tracker links inspired by the supplied reference. */
+.tracker-links { display:flex; flex-wrap:wrap; align-items:center; gap:8px 14px; padding:4px 0; }
+.tracker-links a { display:inline-flex; align-items:center; gap:3px; width:max-content; font-size:12px; line-height:1.5; white-space:nowrap; }
+.detail-url { margin:7px 0 12px; color:#7b8799; font-size:11px; overflow-wrap:anywhere; }
+.detail-url code { font-family:"IBM Plex Mono",monospace; color:#53637a; background:#f1f4f8; padding:3px 5px; border-radius:4px; }
+.action-wrap { flex-wrap:wrap; }
