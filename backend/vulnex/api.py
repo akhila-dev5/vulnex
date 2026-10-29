@@ -122,6 +122,15 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
+def _branches_for_filter(branch: str) -> list[str] | None:
+    """Map a UI release label to real source branch names in older snapshots."""
+    aliases = {
+        "3.0": ["3.0", "3.0-dev", "fasttrack/3.0"],
+        "4.0": ["4.0", "4.0-dev", "fasttrack/4.0"],
+    }
+    return aliases.get(branch)
+
+
 manager = ScanManager()
 
 
@@ -361,7 +370,8 @@ def get_packages(
 ) -> dict:
     with db.session() as conn:
         rows, total = db.list_packages(
-            conn, search=search, branch=branch, limit=limit, offset=(page - 1) * limit
+            conn, search=search, branch=branch if not _branches_for_filter(branch) else "",
+            branches=_branches_for_filter(branch), limit=limit, offset=(page - 1) * limit
         )
     return {"items": rows, "total": total, "page": page, "limit": limit}
 
@@ -410,7 +420,8 @@ def get_findings(
                 severity=severity,
                 search=search,
                 package=package,
-                branch=branch,
+                branch=branch if not _branches_for_filter(branch) else "",
+                branches=_branches_for_filter(branch),
                 limit=limit,
                 offset=(page - 1) * limit,
             )
@@ -430,7 +441,8 @@ def get_findings(
                 severity=severity,
                 search=search,
                 package=package,
-                branch=branch,
+                branch=branch if not _branches_for_filter(branch) else "",
+                branches=_branches_for_filter(branch),
                 limit=batch_size,
                 offset=offset,
             )
@@ -457,8 +469,6 @@ def get_findings(
             if patch_state == "available" and not patch.get("available"):
                 continue
             if patch_state == "unavailable" and (not patch.get("applicable") or patch.get("available")):
-                continue
-            if patch_state == "unknown" and patch.get("available"):
                 continue
             filtered.append(finding)
 
@@ -789,6 +799,8 @@ def start_scan(request: Request, payload: ScanRequest | None = None) -> JSONResp
     require_admin(request)
     payload = payload or ScanRequest()
     options = ScanOptions(
+        # The release branch is the production Azure Linux 3.0 source. Do not
+        # scan the repository's default branch or mix in 3.0-dev/fasttrack.
         branches=["3.0"],
         packages=set(payload.packages) if payload.packages else None,
         limit=payload.limit,
