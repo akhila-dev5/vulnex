@@ -21,8 +21,8 @@ CACHE_DIR = Path(os.environ.get("VULNEX_CACHE", DATA_DIR / "cache"))
 DB_PATH = Path(os.environ.get("VULNEX_DB", DATA_DIR / "vulnex.db"))
 
 # Azure Linux source repository -------------------------------------------
-REPO_OWNER = os.environ.get("VULNEX_REPO_OWNER", "akhila-dev5")
-REPO_NAME = os.environ.get("VULNEX_REPO_NAME", "azurelinux-test")
+REPO_OWNER = os.environ.get("VULNEX_REPO_OWNER", "microsoft")
+REPO_NAME = os.environ.get("VULNEX_REPO_NAME", "azurelinux")
 DEFAULT_BRANCHES = [
     b.strip()
     for b in os.environ.get("VULNEX_BRANCHES", "3.0").split(",")
