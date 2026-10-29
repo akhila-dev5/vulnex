@@ -2,7 +2,7 @@
 
 Examples::
 
-    python -m vulnex.cli scan --branches 3.0-dev,fasttrack/3.0
+    python -m vulnex.cli scan --branches 3.0 or 4.0
     python -m vulnex.cli scan --packages curl,openssl,sqlite --no-blobs
     python -m vulnex.cli stats
     python -m vulnex.cli serve --port 8000
