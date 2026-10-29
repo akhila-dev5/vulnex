@@ -65,11 +65,9 @@ jobs:
           VULNEX_REPO_NAME: azurelinux-test
           VULNEX_BRANCHES: ${{ github.event.inputs.branches || '3.0,4.0' }}
         run: |
-          for branch in ${VULNEX_BRANCHES//,/ }; do
-            python -m vulnex.cli scan \
-              --branches "${branch}" \
-              --enrich-limit "${{ github.event.inputs.enrich_limit || '400' }}"
-          done
+          python -m vulnex.cli scan \
+            --branches "${VULNEX_BRANCHES}" \
+            --enrich-limit "${{ github.event.inputs.enrich_limit || '400' }}"
 
       - name: Print snapshot summary
         working-directory: backend
