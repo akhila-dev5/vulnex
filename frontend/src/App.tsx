@@ -23,6 +23,7 @@ type Finding = {
   spec_path: string; severity?: string; cvss_score?: number | null; description?: string;
   status?: string; detected_on?: string; fixed_version?: string; advisory_id?: string; source?: string; triage?: Record<string, unknown> | null;
   patch_availability?: { applicable?: boolean; available?: boolean; ai_verdict?: string; final_verdict?: string; possible_links?: string[]; analysis?: string[]; patch_link?: string; available_since?: string };
+  assignment?: { assignee_email?: string; status?: string; notes?: string } | null;
 };
 type PageResult<T> = { items: T[]; total: number; page?: number; limit?: number };
 type FindingComment = { id?: number; kind?: string; author?: string; body?: string; created_at?: string };
@@ -353,7 +354,7 @@ function App() {
                   <td><button className="link-button" onClick={() => void openDetail(row.cve_id)}><strong>{row.cve_id}</strong><small>{row.package_name || "Unknown package"} · {row.package_version || "version unavailable"}</small></button></td>
                   <td><code>{row.branch}</code></td><td><StatusPill tone={severityClass(row.severity)}>{row.severity || "Unknown"}</StatusPill></td>
                   <td><StatusPill tone={row.patch_availability?.available ? "good" : row.patch_availability?.applicable === false ? "neutral" : "warning"}>{row.patch_availability?.available ? "Candidate found" : row.patch_availability?.applicable === false ? "Not applicable" : "Unknown"}</StatusPill>{row.patch_availability?.patch_link && <a className="sub-link" href={row.patch_availability.patch_link} target="_blank" rel="noopener noreferrer">Evidence link <ArrowUpRight size={12} /></a>}</td>
-                  <td>{String(triage.resolution_status || row.status || "Unknown")}</td><td>{row.fixed_version || "—"}</td><td>{String(triage.owner || "—")}</td>
+                  <td>{String(triage.resolution_status || row.status || "Unknown")}</td><td>{row.fixed_version || "—"}</td><td>{row.assignment?.assignee_email || String(triage.owner || "—")}</td>
                   <td><div className="action-wrap">
                     <button className="btn action-btn" onClick={() => void openDeep(row)}><FileSearch size={14} /> Deep</button>
                     <button className="btn action-btn" disabled={!canAdmin} onClick={() => openAction("assign", row)}>Assign</button>
