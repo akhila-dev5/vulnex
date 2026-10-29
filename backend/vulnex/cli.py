@@ -22,8 +22,8 @@ from .scanner import ScanOptions, run_scan
 
 def _cmd_scan(args: argparse.Namespace) -> int:
     branches = [b.strip() for b in args.branches.split(",") if b.strip()]
-    if len(branches) != 1 or branches[0] not in {"3.0", "4.0"}:
-        print("[vulnex] Choose exactly one stable branch: 3.0 or 4.0.", file=sys.stderr)
+    if not branches or set(branches) - {"3.0", "4.0"}:
+        print("[vulnex] Scan only stable branches 3.0 and/or 4.0.", file=sys.stderr)
         return 2
     packages = {p.strip() for p in args.packages.split(",") if p.strip()} if args.packages else None
     options = ScanOptions(
@@ -31,8 +31,7 @@ def _cmd_scan(args: argparse.Namespace) -> int:
         packages=packages,
         limit=args.limit,
         ecosystem=args.ecosystem or (
-            "Azure Linux:4" if branches[0] == "4.0"
-            else "Azure Linux:3"
+            "Azure Linux:4" if branches == ["4.0"] else "Azure Linux:3" if branches == ["3.0"] else "Azure Linux:3+Azure Linux:4"
         ),
         include_extended=args.include_extended,
         verify_blobs=not args.no_blobs,
@@ -121,7 +120,7 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", required=True)
 
     def add_scan(p: argparse.ArgumentParser) -> None:
-        p.add_argument("--branches", default="3.0", help="Stable release branch to scan: 3.0 or 4.0")
+        p.add_argument("--branches", default="3.0", help="Stable release branch(es) to scan: 3.0, 4.0, or 3.0,4.0")
         p.add_argument("--packages", default="", help="Comma-separated package allow-list")
         p.add_argument("--limit", type=int, default=0, help="Max specs to scan (0 = all)")
         p.add_argument("--ecosystem", default=None, help="Override advisory ecosystem; inferred from selected branch by default")
