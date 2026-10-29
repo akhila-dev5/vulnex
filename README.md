@@ -2,7 +2,7 @@
 
 **Azure Linux CVE scanner and security dashboard.** VULNEX reads the real RPM spec
 tree exclusively from [akhila-dev5/azurelinux-test](https://github.com/akhila-dev5/azurelinux-test), matches every package
-against the official Microsoft Azure Linux advisory database, and then *verifies* each
+against the Azure Linux advisory ecosystem, and then *verifies* each
 hit against the distro's own backport patches — so the dashboard shows what is actually
 exploitable, not a keyword soup.
 
@@ -244,7 +244,7 @@ Two real examples from the current snapshot:
 
 | Source | Used for | Cost |
 | --- | --- | --- |
-| **OSV.dev — `Azure Linux:3`** | Primary detection: official Azure Linux advisories with RPM `fixed`/`last_affected` events | free |
+| **OSV.dev — `Azure Linux:3`** | Primary detection: Azure Linux advisories with RPM `fixed`/`last_affected` events | free |
 | **OSV.dev — Red Hat / Debian / Ubuntu / Alpine** | Cross-distribution corroboration of CVE ids | free |
 | **NVD** | CVSS severity, CWE, references | free (optional `NVD_API_KEY` raises limits) |
 | **MITRE CVE (cveawg)** | Authoritative CVE identity and description | free |
