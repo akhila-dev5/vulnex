@@ -340,11 +340,14 @@ def auth_google_callback(request: Request, code: str = "", state: str = "") -> R
 
 
 @app.get("/api/stats")
-def get_stats() -> dict:
+def get_stats(branch: str = "") -> dict:
+    if branch and not _branches_for_filter(branch):
+        raise HTTPException(status_code=400, detail="Choose stable branch 3.0 or 4.0.")
     with db.session() as conn:
-        data = db.stats(conn)
+        data = db.stats(conn, branch=branch or None)
     data["repository"] = config.repository_metadata()
     data["roles"] = config.roles_metadata()
+    data["selected_branch"] = branch or None
     return data
 
 
