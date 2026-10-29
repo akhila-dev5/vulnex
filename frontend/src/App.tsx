@@ -266,7 +266,7 @@ function App() {
     } catch (e) { setScanStatus("idle"); setToast(messageOf(e)); }
   };
 
-  const openAction = (action: "dispute" | "comment" | "patch" | "pr", row: Finding) => {
+  const openAction = (action: "dispute" | "comment" | "patch" | "pr" | "assign", row: Finding) => {
     setTarget(row); setModal(action); setFormText(""); setDisputeTag("UPSTREAM"); setDisputeVersion(""); setNeverApplicable(false);
     setPatchVerdict(String(row.triage?.final_verdict || ""));
     setPatchLink(row.patch_availability?.patch_link || "");
