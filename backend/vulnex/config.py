@@ -30,7 +30,7 @@ DEFAULT_BRANCHES = [
 ]
 
 # Vulnerability intelligence ----------------------------------------------
-# OSV publishes the official Microsoft Azure Linux advisory database under the
+# OSV advisory matching is applied to packages discovered only from azurelinux-test under the
 # "Azure Linux:<major>" ecosystem, with RPM version-release "fixed" events.
 OSV_ECOSYSTEM = os.environ.get("VULNEX_OSV_ECOSYSTEM", "Azure Linux:3")
 # Optional corroborating OSV ecosystems queried by package name (no version,
