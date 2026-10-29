@@ -120,7 +120,7 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", required=True)
 
     def add_scan(p: argparse.ArgumentParser) -> None:
-        p.add_argument("--branches", default="3.0", help="Stable release branch(es) to scan: 3.0, 4.0, or 3.0,4.0")
+        p.add_argument("--branches", default="3.0,4.0", help="Stable release branch(es) to scan: 3.0, 4.0, or 3.0,4.0")
         p.add_argument("--packages", default="", help="Comma-separated package allow-list")
         p.add_argument("--limit", type=int, default=0, help="Max specs to scan (0 = all)")
         p.add_argument("--ecosystem", default=None, help="Override advisory ecosystem; inferred from selected branch by default")
