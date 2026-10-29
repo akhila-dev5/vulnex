@@ -1,4 +1,4 @@
-name: VULNEX scan
+name: Vulnex scan
 
 # Runs on a schedule, on demand, and never on a bot push (the snapshot commit is
 # marked [skip ci]) so the workflow cannot loop on itself.
@@ -9,7 +9,7 @@ on:
     inputs:
       branches:
         description: "Comma-separated branches to scan"
-        default: "3.0-dev,fasttrack/3.0"
+        default: "3.0"
       enrich_limit:
         description: "Max CVEs to enrich from NVD/MITRE/Red Hat/GHSA"
         default: "400"
@@ -61,7 +61,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
-          VULNEX_BRANCHES: ${{ github.event.inputs.branches || '3.0-dev,fasttrack/3.0' }}
+          VULNEX_BRANCHES: "3.0"
         run: |
           python -m vulnex.cli scan \
             --branches "${VULNEX_BRANCHES}" \
