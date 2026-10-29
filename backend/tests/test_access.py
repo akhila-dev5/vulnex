@@ -3,7 +3,7 @@
 VULNEX is a shared tool, not a public showcase. A request with no key is always
 ``viewer``. The admin identity triages, disputes, comments and sets patch
 verdicts; the ``automation`` machine identity may do exactly one thing — set the
-GitHub CVE PR. These tests pin that boundary on the API rather than trusting the
+Google CVE PR. These tests pin that boundary on the API rather than trusting the
 UI to hide buttons.
 """
 
@@ -14,12 +14,12 @@ from test_api import _finding, _package
 from vulnex import auth, config, db
 from vulnex.api import app
 
-# The only human credential is a GitHub sign-in; the machine identity keeps a
+# The only human credential is a Google sign-in; the machine identity keeps a
 # static key. There is no shared "access key" and no password for people.
 AUTOMATION_KEY = "test-automation-key"
 AUTO = {"X-VULNEX-Key": AUTOMATION_KEY}
 KEY_HEADER = "X-VULNEX-Key"
-GITHUB_LOGIN = "akhila-dev5"
+GOOGLE_LOGIN = "akhila-dev5"
 
 FINDING = {"cve_id": "CVE-2024-0500", "branch": "3.0-dev",
            "spec_path": "SPECS/demo/demo.spec"}
@@ -49,7 +49,7 @@ def _clean_sessions():
 
 @pytest.fixture()
 def client(tmp_path, monkeypatch):
-    """A server with the GitHub allow-list and the automation key configured."""
+    """A server with the Google allow-list and the automation key configured."""
     db_path = tmp_path / "vulnex.db"
     monkeypatch.setattr(config, "DB_PATH", db_path)
     monkeypatch.setattr(config, "AUTOMATION_KEY", AUTOMATION_KEY)
@@ -59,8 +59,8 @@ def client(tmp_path, monkeypatch):
 
 @pytest.fixture()
 def admin(client):
-    """Signed-in admin headers — a real session token, as GitHub sign-in mints."""
-    token, _ = auth.sessions.create(config.identity_for("admin"), method="github")
+    """Signed-in admin headers — a real session token, as Google sign-in mints."""
+    token, _ = auth.sessions.create(config.identity_for("admin"), method="google")
     return {KEY_HEADER: token}
 
 
@@ -79,10 +79,10 @@ def test_admin_session_unlocks_triage(client, admin):
     assert data["can_dispute"] and data["can_comment"] and data["can_set_pr"]
 
 
-def test_role_endpoint_advertises_only_github(client):
+def test_role_endpoint_advertises_only_google(client):
     data = client.get("/api/role").json()
     assert data["role"] == "viewer"
-    assert data["methods"] == {"github": False, "github_login": GITHUB_LOGIN}
+    assert data["methods"] == {"google": False, "google_login": GOOGLE_LOGIN}
 
 
 def test_automation_key_can_only_set_the_pr(client):
@@ -94,9 +94,9 @@ def test_automation_key_can_only_set_the_pr(client):
     assert data["write_enabled"] is False
 
 
-# -- sign-in: GitHub only ---------------------------------------------------
+# -- sign-in: Google only ---------------------------------------------------
 def test_password_login_endpoint_is_gone(client):
-    """GitHub is the only admin method: the old password route no longer exists."""
+    """Google is the only admin method: the old password route no longer exists."""
     resp = client.post(
         "/api/auth/login", json={"email": "lead@example.com", "password": "x"}
     )
@@ -118,47 +118,47 @@ def test_a_guess_is_not_an_admin_credential(client):
         assert client.get("/api/role", headers={KEY_HEADER: guess}).json()["role"] == "viewer"
 
 
-# -- GitHub sign-in ---------------------------------------------------------
-def test_github_sign_in_is_unavailable_until_configured(client):
-    assert client.get("/api/auth/github", follow_redirects=False).status_code == 503
+# -- Google sign-in ---------------------------------------------------------
+def test_google_sign_in_is_unavailable_until_configured(client):
+    assert client.get("/api/auth/google", follow_redirects=False).status_code == 503
 
 
-def test_github_callback_requires_a_fresh_state(client, monkeypatch):
-    monkeypatch.setattr(config, "GITHUB_OAUTH_CLIENT_ID", "cid")
-    monkeypatch.setattr(config, "GITHUB_OAUTH_CLIENT_SECRET", "secret")
+def test_google_callback_requires_a_fresh_state(client, monkeypatch):
+    monkeypatch.setattr(config, "GOOGLE_OAUTH_CLIENT_ID", "cid")
+    monkeypatch.setattr(config, "GOOGLE_OAUTH_CLIENT_SECRET", "secret")
     resp = client.get(
-        "/api/auth/github/callback",
+        "/api/auth/google/callback",
         params={"code": "x", "state": "forged"},
         follow_redirects=False,
     )
     assert resp.status_code == 400
 
 
-def test_github_callback_allows_only_the_admin_login(client, monkeypatch):
-    monkeypatch.setattr(config, "GITHUB_OAUTH_CLIENT_ID", "cid")
-    monkeypatch.setattr(config, "GITHUB_OAUTH_CLIENT_SECRET", "secret")
-    monkeypatch.setattr(auth, "github_exchange", lambda code, uri: {"login": "someone-else"})
-    start = client.get("/api/auth/github", follow_redirects=False)
+def test_google_callback_allows_only_the_admin_login(client, monkeypatch):
+    monkeypatch.setattr(config, "GOOGLE_OAUTH_CLIENT_ID", "cid")
+    monkeypatch.setattr(config, "GOOGLE_OAUTH_CLIENT_SECRET", "secret")
+    monkeypatch.setattr(auth, "google_exchange", lambda code, uri: {"email": "someone-else@example.com", "email_verified": True})
+    start = client.get("/api/auth/google", follow_redirects=False)
     assert start.status_code == 307
-    assert "github.com/login/oauth/authorize" in start.headers["location"]
+    assert "google.com/login/oauth/authorize" in start.headers["location"]
     assert "client_id=cid" in start.headers["location"]
     state = start.headers["location"].split("state=")[1].split("&")[0]
     denied = client.get(
-        "/api/auth/github/callback",
+        "/api/auth/google/callback",
         params={"code": "x", "state": state},
         follow_redirects=False,
     )
     assert denied.status_code == 403
 
 
-def test_github_callback_mints_a_session_for_the_admin(client, monkeypatch):
-    monkeypatch.setattr(config, "GITHUB_OAUTH_CLIENT_ID", "cid")
-    monkeypatch.setattr(config, "GITHUB_OAUTH_CLIENT_SECRET", "secret")
-    monkeypatch.setattr(auth, "github_exchange", lambda code, uri: {"login": GITHUB_LOGIN})
-    start = client.get("/api/auth/github", follow_redirects=False)
+def test_google_callback_mints_a_session_for_the_admin(client, monkeypatch):
+    monkeypatch.setattr(config, "GOOGLE_OAUTH_CLIENT_ID", "cid")
+    monkeypatch.setattr(config, "GOOGLE_OAUTH_CLIENT_SECRET", "secret")
+    monkeypatch.setattr(auth, "google_exchange", lambda code, uri: {"login": GOOGLE_LOGIN})
+    start = client.get("/api/auth/google", follow_redirects=False)
     state = start.headers["location"].split("state=")[1].split("&")[0]
     done = client.get(
-        "/api/auth/github/callback",
+        "/api/auth/google/callback",
         params={"code": "x", "state": state},
         follow_redirects=False,
     )
@@ -178,7 +178,7 @@ def test_viewer_cannot_write_anything(client):
         "/api/triage/dispute", json={**FINDING, "reason": "wrong"}
     ).status_code == 401
     assert client.post(
-        "/api/triage/github-pr", json={**FINDING, "number": "1"}
+        "/api/triage/google-pr", json={**FINDING, "number": "1"}
     ).status_code == 401
     assert client.post(
         "/api/triage/patch", json={**FINDING, "final_verdict": "No Patch Found"}
@@ -242,13 +242,13 @@ def test_dispute_and_comment_need_content(client, admin):
 # -- automation is narrowly scoped -----------------------------------------
 def test_automation_sets_the_pr_but_nothing_else(client):
     resp = client.post(
-        "/api/triage/github-pr", headers=AUTO, json={**FINDING, "number": "#19015"}
+        "/api/triage/google-pr", headers=AUTO, json={**FINDING, "number": "#19015"}
     )
     assert resp.status_code == 200
     triage = resp.json()["triage"]
-    assert triage["github_pr_number"] == "19015"
-    assert triage["github_pr_url"].endswith("/pull/19015")
-    assert triage["github_pr_set_by"] == config.AUTOMATION_IDENTITY
+    assert triage["google_pr_number"] == "19015"
+    assert triage["google_pr_url"].endswith("/pull/19015")
+    assert triage["google_pr_set_by"] == config.AUTOMATION_IDENTITY
 
     # Everything else is refused for the machine identity.
     assert client.post(
@@ -264,7 +264,7 @@ def test_automation_sets_the_pr_but_nothing_else(client):
 
 def test_pr_number_is_required(client):
     assert client.post(
-        "/api/triage/github-pr", headers=AUTO, json={**FINDING, "number": "  "}
+        "/api/triage/google-pr", headers=AUTO, json={**FINDING, "number": "  "}
     ).status_code == 400
 
 
