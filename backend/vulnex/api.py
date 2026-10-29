@@ -240,6 +240,8 @@ class FindingRef(BaseModel):
 
 class DisputeRequest(FindingRef):
     reason: str
+    first_unaffected_version: str = ""
+    never_applicable: bool = False
 
 
 class GithubPRRequest(FindingRef):
@@ -642,6 +644,14 @@ def raise_dispute(payload: DisputeRequest, request: Request) -> dict:
     reason = (payload.reason or "").strip()
     if not reason:
         raise HTTPException(status_code=400, detail="A dispute needs a reason")
+    version = (payload.first_unaffected_version or "").strip()
+    if payload.never_applicable:
+        reason += "\\nApplicability: Never Applicable"
+    elif version:
+        import re
+        if not re.fullmatch(r"[A-Za-z0-9._+~^-]+", version):
+            raise HTTPException(status_code=400, detail="First unaffected version contains unsupported characters")
+        reason += f"\\nFirst unaffected version: {version}"
     cve_id = payload.cve_id.upper()
     with db.session() as conn:
         comment = db.add_finding_comment(
