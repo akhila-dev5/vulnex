@@ -380,9 +380,9 @@ function App() {
         </section>
       </main>
 
-      {(deepTarget || detailBusy || detail || detailError) && <div className="modal-backdrop" role="presentation" onClick={e => { if (e.target === e.currentTarget) { setDeepTarget(null); setDetail(null); setDetailError(""); } }}>
+      {(deepTarget || detailBusy || detail || detailError) && <div className="modal-backdrop" role="presentation" onClick={e => { if (e.target === e.currentTarget) { setDeepTarget(null); setDetail(null); setDetailError(""); if (window.location.hash.startsWith("#/cve/")) window.history.pushState({}, "", "#/"); } }}>
         <section className="modal-card wide-modal" role="dialog" aria-modal="true" aria-labelledby="detail-modal-title">
-          <button className="modal-close icon-btn" aria-label="Close" onClick={() => { setDeepTarget(null); setDeepData(null); setDetail(null); setDetailError(""); }}><X size={16} /></button>
+          <button className="modal-close icon-btn" aria-label="Close" onClick={() => { setDeepTarget(null); setDeepData(null); setDetail(null); setDetailError(""); if (window.location.hash.startsWith("#/cve/")) window.history.pushState({}, "", "#/"); }}><X size={16} /></button>
           {deepTarget ? <>
             <small>DEEP INSPECTION · {deepTarget.branch}</small><h2 id="detail-modal-title">{deepTarget.cve_id} · {deepTarget.package_name}</h2>
             {deepBusy ? <div className="empty-state"><RefreshCw className="spin" /> Loading affected-file evidence…</div>
