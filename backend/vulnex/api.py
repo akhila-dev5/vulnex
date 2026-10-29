@@ -726,9 +726,12 @@ def scan_history() -> dict:
 
 
 # -- static frontend --------------------------------------------------------
-if config.FRONTEND_DIR.exists():
+# Prefer the Vite build when deployed; fall back to the old static frontend before build.
+_REACT_BUILD_DIR = config.FRONTEND_DIR / "dist"
+_STATIC_FRONTEND_DIR = _REACT_BUILD_DIR if (_REACT_BUILD_DIR / "index.html").is_file() else config.FRONTEND_DIR
+if _STATIC_FRONTEND_DIR.exists():
     app.mount(
         "/",
-        StaticFiles(directory=str(config.FRONTEND_DIR), html=True),
+        StaticFiles(directory=str(_STATIC_FRONTEND_DIR), html=True),
         name="frontend",
     )
