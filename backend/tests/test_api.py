@@ -231,6 +231,23 @@ def test_release_branch_filter_includes_legacy_3_0_snapshot_branches(client):
     assert packages["total"] == 2
 
 
+def test_scan_request_uses_selected_fork_branch_and_ecosystem(client, admin, monkeypatch):
+    from vulnex import api
+    captured = {}
+    monkeypatch.setattr(api.manager, "start", lambda options: captured.update(options=options) or True)
+    response = client.post("/api/scan", headers=admin, json={"branches": ["4.0"], "enrich": False, "verify_blobs": False})
+    assert response.status_code == 202
+    assert captured["options"].branches == ["4.0"]
+    assert captured["options"].ecosystem == "Azure Linux:4"
+
+
+def test_scan_request_rejects_mixed_release_families(client, admin, monkeypatch):
+    from vulnex import api
+    monkeypatch.setattr(api.manager, "start", lambda options: True)
+    response = client.post("/api/scan", headers=admin, json={"branches": ["3.0", "4.0"]})
+    assert response.status_code == 400
+
+
 def test_patch_not_available_filter_returns_findings_without_candidate(client):
     conn = db.connect()
     try:
