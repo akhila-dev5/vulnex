@@ -96,6 +96,9 @@ CREATE TABLE IF NOT EXISTS findings (
     upstream_fix TEXT,
     patch_name TEXT,
     patch_status TEXT,
+    fixed_in TEXT,
+    fixed_in_basis TEXT,
+    fix_source TEXT,
     affected_files TEXT,
     corroborating_sources TEXT,
     evidence TEXT,
@@ -200,6 +203,12 @@ def init_db(conn: sqlite3.Connection) -> None:
     }
     if "assignee_email" not in assignment_columns:
         conn.execute("ALTER TABLE assignments ADD COLUMN assignee_email TEXT DEFAULT ''")
+    finding_columns = {
+        row["name"] for row in conn.execute("PRAGMA table_info(findings)").fetchall()
+    }
+    for column in ("fixed_in", "fixed_in_basis", "fix_source"):
+        if column not in finding_columns:
+            conn.execute(f"ALTER TABLE findings ADD COLUMN {column} TEXT")
     conn.commit()
 
 
@@ -319,18 +328,23 @@ def replace_snapshot(
         """,
         patches,
     )
+    # Rows built before the fix-provenance columns existed omit them.
+    findings = [
+        {"fixed_in": None, "fixed_in_basis": None, "fix_source": None, **row}
+        for row in findings
+    ]
     conn.executemany(
         """
         INSERT INTO findings (scan_id, cve_id, package_name, package_version, branch,
             spec_path, status, severity, cvss_score, cvss_vector, confidence,
             description, fixed_version, advisory_id, source, refs, upstream_fix,
-            patch_name, patch_status, affected_files, corroborating_sources, evidence,
-            raw_sources)
+            patch_name, patch_status, fixed_in, fixed_in_basis, fix_source,
+            affected_files, corroborating_sources, evidence, raw_sources)
         VALUES (:scan_id, :cve_id, :package_name, :package_version, :branch,
             :spec_path, :status, :severity, :cvss_score, :cvss_vector, :confidence,
             :description, :fixed_version, :advisory_id, :source, :refs, :upstream_fix,
-            :patch_name, :patch_status, :affected_files, :corroborating_sources, :evidence,
-            :raw_sources)
+            :patch_name, :patch_status, :fixed_in, :fixed_in_basis, :fix_source,
+            :affected_files, :corroborating_sources, :evidence, :raw_sources)
         """,
         findings,
     )

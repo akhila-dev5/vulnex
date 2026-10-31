@@ -20,7 +20,16 @@ from dataclasses import dataclass, field
 
 from .config import BLOB_STORE_BASE
 
-__all__ = ["ParsedSpec", "SourceItem", "PatchItem", "parse_spec", "expand", "extract_cve_ids"]
+__all__ = [
+    "ParsedSpec",
+    "SourceItem",
+    "PatchItem",
+    "ChangelogEntry",
+    "parse_spec",
+    "parse_changelog",
+    "expand",
+    "extract_cve_ids",
+]
 
 CVE_RE = re.compile(r"CVE-\d{4}-\d{4,7}", re.IGNORECASE)
 _MACRO_RE = re.compile(r"%\{(!\?|\?)?([A-Za-z0-9_]+)(?::([^{}]*))?\}")
@@ -31,6 +40,19 @@ _FIELD_RE = re.compile(
 _PATCH_RE = re.compile(r"^Patch(\d*)\s*:\s*(.*)$", re.IGNORECASE)
 _SOURCE_RE = re.compile(r"^Source(\d*)\s*:\s*(.*)$", re.IGNORECASE)
 _DEFINE_RE = re.compile(r"^%(?:define|global)\s+([A-Za-z0-9_]+)\s*(.*)$")
+
+# ``* Tue Oct 21 2025 Name <mail> - 8.11.1-11`` -- the trailing token is the
+# version-release the entry was released as (optionally ``epoch:``-prefixed).
+_CHANGELOG_HEAD_RE = re.compile(
+    r"^\*\s+(?P<date>\w{3}\s+\w{3}\s+\d{1,2}\s+\d{4})\s+(?P<author>.*?)\s*-\s*"
+    r"(?P<evr>(?:\d+:)?[^\s-][^\s]*-[^\s]+|(?:\d+:)?[^\s]+)\s*$"
+)
+# A changelog line that mentions a CVE but says the opposite of "fixed".
+_NOT_A_FIX_RE = re.compile(
+    r"\b(revert|remov(e|ed|ing)|drop(ped|ping)?|not\s+(affected|applicable|vulnerable)|"
+    r"nopatch|no\s+longer|disable[sd]?)\b",
+    re.IGNORECASE,
+)
 
 _TARBALL_SUFFIXES = (
     ".tar.gz",
@@ -124,6 +146,27 @@ class PatchItem:
 
 
 @dataclass
+class ChangelogEntry:
+    """One ``%changelog`` entry: who released which version-release, and what."""
+
+    date: str
+    author: str
+    evr: str  # version-release as written in the entry header, epoch stripped
+    lines: list[str] = field(default_factory=list)
+
+    @property
+    def fixed_cves(self) -> list[str]:
+        """CVEs this entry says it fixed (reverts/removals/not-affected excluded)."""
+        seen: dict[str, None] = {}
+        for line in self.lines:
+            if _NOT_A_FIX_RE.search(line):
+                continue
+            for cve in extract_cve_ids(line):
+                seen.setdefault(cve, None)
+        return list(seen)
+
+
+@dataclass
 class ParsedSpec:
     """Structured representation of an Azure Linux package spec."""
 
@@ -141,6 +184,7 @@ class ParsedSpec:
     patches: list[PatchItem]
     macros: dict[str, str]
     raw_url: str = ""
+    changelog: list[ChangelogEntry] = field(default_factory=list)
 
     @property
     def evr(self) -> str:
@@ -169,6 +213,18 @@ class ParsedSpec:
                 out.setdefault(cve, patch)
         return out
 
+    def changelog_fixes(self) -> dict[str, ChangelogEntry]:
+        """Map of CVE id -> the *oldest* changelog entry that fixed it.
+
+        The changelog is newest-first, and a CVE is fixed in the release that
+        first mentioned it, so the last matching entry wins.
+        """
+        out: dict[str, ChangelogEntry] = {}
+        for entry in self.changelog:
+            for cve in entry.fixed_cves:
+                out[cve] = entry
+        return out
+
     def nopatch_cves(self) -> dict[str, PatchItem]:
         out: dict[str, PatchItem] = {}
         for patch in self.patches:
@@ -190,6 +246,35 @@ def _filename_from_url(url: str) -> str:
     return posixpath.basename(path)
 
 
+def parse_changelog(text: str) -> list[ChangelogEntry]:
+    """Parse a spec's ``%changelog`` section, newest entry first (file order)."""
+    entries: list[ChangelogEntry] = []
+    current: ChangelogEntry | None = None
+    for line in (text or "").splitlines():
+        stripped = line.strip()
+        if stripped.startswith("*"):
+            m = _CHANGELOG_HEAD_RE.match(stripped)
+            if m:
+                evr = m.group("evr")
+                if ":" in evr:  # drop a leading epoch, keep version-release
+                    evr = evr.split(":", 1)[1]
+                current = ChangelogEntry(m.group("date"), m.group("author"), evr)
+                entries.append(current)
+                continue
+        if current is not None and stripped:
+            current.lines.append(stripped)
+    return entries
+
+
+def _split_changelog(text: str) -> tuple[str, str]:
+    """Split a spec into (everything before %changelog, the changelog body)."""
+    lines = text.splitlines()
+    for i, line in enumerate(lines):
+        if line.strip().lower() == "%changelog":
+            return "\n".join(lines[:i]), "\n".join(lines[i + 1 :])
+    return text, ""
+
+
 def parse_spec(
     text: str,
     branch: str,
@@ -198,6 +283,7 @@ def parse_spec(
     raw_url: str = "",
 ) -> ParsedSpec:
     """Parse the contents of an RPM spec file into a :class:`ParsedSpec`."""
+    text, changelog_text = _split_changelog(text)
     raw_fields: dict[str, str] = {}
     macro_defs: dict[str, str] = {}
     raw_patches: list[tuple[str, str, str]] = []  # (tag, raw_value, comment)
@@ -324,4 +410,5 @@ def parse_spec(
         patches=patches,
         macros=macros,
         raw_url=raw_url,
+        changelog=parse_changelog(changelog_text),
     )
