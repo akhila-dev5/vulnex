@@ -115,6 +115,32 @@ def _cmd_vuln_data(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_fixed_cves(args: argparse.Namespace) -> int:
+    """Write the fixed-CVE ledger, and optionally publish it to VulnerabilityData."""
+    import os
+
+    from . import fixed_cves
+
+    with db.session(args.db) as conn:
+        ledger = fixed_cves.build_ledger(conn, args.branch)
+    body = fixed_cves.ledger_body(ledger)
+    if args.out:
+        Path(args.out).write_text(body, encoding="utf-8")
+        print(f"[vulnex] ledger written to {args.out}", flush=True)
+    print(json.dumps(ledger["stats"], indent=2))
+    if args.publish:
+        token = os.environ.get("VULNEX_VULNDATA_TOKEN", "")
+        try:
+            result = fixed_cves.publish_ledger(
+                ledger, token, repo=args.repo, base=args.base, open_pr=not args.no_pr
+            )
+        except fixed_cves.PublishError as exc:
+            print(f"[vulnex] publish failed: {exc}", file=sys.stderr)
+            return 1
+        print(json.dumps(result, indent=2))
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="vulnex", description="Vulnex Azure Linux CVE scanner")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -169,6 +195,24 @@ def build_parser() -> argparse.ArgumentParser:
         help="Re-fetch the feed instead of using the on-disk cache",
     )
     vuln_data.set_defaults(func=_cmd_vuln_data)
+
+    fixed = sub.add_parser(
+        "fixed-cves",
+        help="Build the fixed-CVE ledger (CVEs patched in a spec) for VulnerabilityData",
+    )
+    fixed.add_argument("--branch", default="3.0")
+    fixed.add_argument("--db", default=None)
+    fixed.add_argument("--out", default=None, help="Write the ledger JSON to this file")
+    fixed.add_argument(
+        "--publish",
+        action="store_true",
+        help="Commit the ledger to VulnerabilityData on a branch and open a PR "
+        "(token from VULNEX_VULNDATA_TOKEN)",
+    )
+    fixed.add_argument("--repo", default=None, help="owner/name; default VulnerabilityData")
+    fixed.add_argument("--base", default="main")
+    fixed.add_argument("--no-pr", action="store_true")
+    fixed.set_defaults(func=_cmd_fixed_cves)
 
     return parser
 

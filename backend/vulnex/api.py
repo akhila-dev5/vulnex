@@ -18,7 +18,7 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import __version__, auth, config, db, triage
+from . import __version__, auth, config, db, fixed_cves, triage
 from .enrichment import enrich_cve
 from .scanner import ScanOptions, run_scan
 from .sources.vulnerabilitydata import FeedError, VulnerabilityDataSource
@@ -559,6 +559,20 @@ def get_cve_deep(cve_id: str, branch: str = "", spec: str = "") -> dict:
         if finding is None:
             raise HTTPException(status_code=404, detail="CVE/package/branch combination not found in the current scan")
         return triage.deep_view(finding, _package_for(conn, finding))
+
+
+@app.get("/api/fixed-cves")
+def get_fixed_cves(branch: str = "3.0") -> dict:
+    """Scanned CVEs already fixed in a spec, with the version-release they shipped in.
+
+    This is the ledger published to VulnerabilityData. It is read-only and
+    separate from patch availability (which concerns upstream patches only).
+    """
+    conn = db.connect()
+    try:
+        return fixed_cves.build_ledger(conn, branch)
+    finally:
+        conn.close()
 
 
 # -- VulnerabilityData feed (pre-computed NVD inventory) ---------------------

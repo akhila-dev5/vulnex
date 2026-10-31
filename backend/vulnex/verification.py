@@ -24,6 +24,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from .rpmvercmp import compare_evr
 from .sources.osv import OSVAdvisory
 from .spec_parser import ParsedSpec, PatchItem
 
@@ -65,6 +66,11 @@ class Finding:
     upstream_fix: str | None = None
     patch_name: str | None = None
     patch_status: str | None = None
+    # Distro fix provenance for ``patched`` findings: the spec version-release the
+    # fix shipped in, and how we know ("patch" file or "changelog" entry only).
+    fixed_in: str | None = None
+    fixed_in_basis: str | None = None  # "changelog" | "spec-evr"
+    fix_source: str | None = None  # "patch" | "changelog"
     affected_files: list[str] = field(default_factory=list)
     corroborating_sources: list[str] = field(default_factory=list)
     evidence: list[str] = field(default_factory=list)
@@ -169,6 +175,12 @@ def _from_patch(
     if patch.file_present is False:
         evidence.append("Referenced patch file was not found in the repository tree.")
 
+    fixed_in = fixed_basis = fix_source = None
+    if kind == "patch":
+        fixed_in, fixed_basis = _fixed_release(spec, cve)
+        fix_source = "patch"
+        evidence.append(_fixed_evidence(spec, cve, fixed_in, fixed_basis))
+
     finding = Finding(
         cve_id=cve,
         package_name=spec.name,
@@ -181,6 +193,9 @@ def _from_patch(
         patch_name=patch.filename,
         patch_status=patch_status,
         source="spec-patch",
+        fixed_in=fixed_in,
+        fixed_in_basis=fixed_basis,
+        fix_source=fix_source,
         evidence=evidence,
         raw_sources=["spec"],
     )
@@ -233,6 +248,22 @@ def _from_advisory(
         # Should be caught upstream, but keep the invariant explicit.
         status = STATUS_PATCHED
 
+    # A fix can ship without a ``CVE-*.patch`` file (version bump, inline edit).
+    # The spec's own changelog is the record of that: if a release no newer than
+    # the one we scan names this CVE as fixed, the package is not exposed.
+    fixed_in = fixed_basis = fix_source = None
+    entry = spec.changelog_fixes().get(cve)
+    if status in (STATUS_AFFECTED, STATUS_UNCONFIRMED) and entry is not None \
+            and compare_evr(entry.evr, spec.evr) <= 0:
+        status = STATUS_PATCHED
+        fix_source = "changelog"
+        fixed_in, fixed_basis = entry.evr, "changelog"
+        evidence.append(_fixed_evidence(spec, cve, fixed_in, fixed_basis, via_changelog=True))
+    elif status == STATUS_PATCHED and patch is not None:
+        fix_source = "patch"
+        fixed_in, fixed_basis = _fixed_release(spec, cve)
+        evidence.append(_fixed_evidence(spec, cve, fixed_in, fixed_basis))
+
     if corroborating:
         evidence.append(
             "Corroborated by: " + ", ".join(corroborating) + "."
@@ -259,7 +290,36 @@ def _from_advisory(
         upstream_fix=advisory.upstream_fix,
         patch_name=patch.filename if patch else None,
         patch_status=patch.status if patch else None,
+        fixed_in=fixed_in,
+        fixed_in_basis=fixed_basis,
+        fix_source=fix_source,
         corroborating_sources=corroborating,
         evidence=evidence,
         raw_sources=["osv"] + corroborating,
+    )
+
+
+def _fixed_release(spec: ParsedSpec, cve: str) -> tuple[str, str]:
+    """Version-release a patched CVE shipped in, read from the spec changelog.
+
+    Falls back to the scanned spec's own version-release (an upper bound: the fix
+    cannot be newer than the package we are looking at) when no changelog entry
+    names the CVE; the basis is reported so callers can tell the two apart.
+    """
+    entry = spec.changelog_fixes().get(cve)
+    if entry is not None:
+        return entry.evr, "changelog"
+    return spec.evr, "spec-evr"
+
+
+def _fixed_evidence(
+    spec: ParsedSpec, cve: str, fixed_in: str, basis: str, via_changelog: bool = False
+) -> str:
+    if basis == "changelog":
+        how = "the changelog records the fix" if not via_changelog else \
+            "the changelog records the fix (no patch file)"
+        return f"{spec.name} fixed {cve} in {fixed_in}; {how}."
+    return (
+        f"{spec.name} applies a patch for {cve}, but no changelog entry names it; "
+        f"fixed version-release is bounded by the scanned {fixed_in}."
     )
