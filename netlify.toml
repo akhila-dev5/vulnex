@@ -1,0 +1,22 @@
+# Netlify hosts the React frontend only. The FastAPI backend stays on Render, and
+# Netlify forwards /api/* to it so the browser sees a single origin (no CORS, and
+# the Google sign-in redirect "/#vulnex_token=..." lands back on this site).
+
+[build]
+  command = "cd frontend && npm ci && npm run build"
+  publish = "frontend/dist"
+
+[build.environment]
+  NODE_VERSION = "22"
+
+[[redirects]]
+  from = "/api/*"
+  to = "https://vulnex-1k5h.onrender.com/api/:splat"
+  status = 200
+  force = true
+
+# Single-page app: hash routes need only index.html, but serve it for any other path too.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
