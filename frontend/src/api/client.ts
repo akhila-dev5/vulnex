@@ -9,6 +9,14 @@ export class ApiError extends Error {
   }
 }
 
+/** What to show when the server sent no usable message (e.g. a gateway timeout page). */
+export function fallbackMessage(status: number): string {
+  if (status === 502 || status === 503 || status === 504) {
+    return `The server took too long to respond or is unavailable (HTTP ${status}). Try again in a moment.`;
+  }
+  return `Request failed (HTTP ${status})`;
+}
+
 export const messageOf = (error: unknown): string =>
   error instanceof Error ? error.message : "Unexpected request error";
 
@@ -31,7 +39,8 @@ export async function request<T>(
   if (token) headers.set("X-VULNEX-Key", token);
   const response = await fetch(API + path, { ...init, headers, credentials: "same-origin" });
   if (!response.ok) {
-    let detail = response.statusText || "Request failed";
+    // HTTP/2 carries no status text, and proxies reply with HTML, so name the status.
+    let detail = fallbackMessage(response.status);
     try {
       const body = (await response.json()) as { detail?: unknown };
       if (typeof body.detail === "string" && body.detail) detail = body.detail;

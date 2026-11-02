@@ -841,6 +841,19 @@ def get_triage(
     return dict(row) if row else None
 
 
+def triage_index(conn) -> dict[tuple[str, str, str], dict]:
+    """Every triage record keyed by (cve_id, branch, spec_path), in ONE query.
+
+    Looking records up one finding at a time costs a database round trip each;
+    against a remote database a 4,500-row list then needs minutes. The triage table
+    only holds what people typed in, so reading it whole is cheap.
+    """
+    return {
+        (row["cve_id"], row["branch"] or "", row["spec_path"] or ""): row
+        for row in _rows(conn, "SELECT * FROM finding_triage")
+    }
+
+
 def upsert_triage(
     conn: sqlite3.Connection,
     cve_id: str,
