@@ -141,6 +141,26 @@ def _cmd_fixed_cves(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_migrate_sqlite(args: argparse.Namespace) -> int:
+    """Copy a SQLite snapshot into the PostgreSQL database named by DATABASE_URL."""
+    from .sqlite_import import import_sqlite
+
+    if not config.DATABASE_URL:
+        print("[vulnex] Set DATABASE_URL to the Postgres connection string first.", file=sys.stderr)
+        return 2
+    pg = db.connect()
+    try:
+        db.init_db(pg)
+        result = import_sqlite(args.source, pg, only=args.only, force=args.force)
+    except (FileNotFoundError, ValueError) as exc:
+        print(f"[vulnex] {exc}", file=sys.stderr)
+        return 1
+    finally:
+        pg.close()
+    print(json.dumps(result, indent=2))
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="vulnex", description="Vulnex Azure Linux CVE scanner")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -213,6 +233,21 @@ def build_parser() -> argparse.ArgumentParser:
     fixed.add_argument("--base", default="main")
     fixed.add_argument("--no-pr", action="store_true")
     fixed.set_defaults(func=_cmd_fixed_cves)
+
+    migrate = sub.add_parser(
+        "migrate-sqlite",
+        help="Copy a SQLite snapshot into the PostgreSQL database in DATABASE_URL",
+    )
+    migrate.add_argument("--from", dest="source", default=str(config.DB_PATH),
+                         help="SQLite file to read (default: data/vulnex.db)")
+    migrate.add_argument(
+        "--only", choices=["all", "snapshot", "triage"], default="all",
+        help="snapshot = scan tables only (what the scheduled scan uses); "
+        "triage = comments, disputes, PR links, assignments",
+    )
+    migrate.add_argument("--force", action="store_true",
+                         help="Overwrite triage tables that already have rows")
+    migrate.set_defaults(func=_cmd_migrate_sqlite)
 
     return parser
 
