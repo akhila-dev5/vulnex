@@ -45,6 +45,8 @@ jobs:
     name: Scan azurelinux-test fork
     needs: test
     runs-on: ubuntu-latest
+    env:
+      HAS_DB: ${{ secrets.DATABASE_URL != '' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -68,6 +70,15 @@ jobs:
           python -m vulnex.cli scan \
             --branches "${VULNEX_BRANCHES}" \
             --enrich-limit "${{ github.event.inputs.enrich_limit || '400' }}"
+
+      # Optional: when the DATABASE_URL secret (Supabase connection string) exists,
+      # refresh the scan tables there too. Triage data is never touched.
+      - name: Sync snapshot to Postgres
+        if: env.HAS_DB == 'true'
+        working-directory: backend
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: python -m vulnex.cli migrate-sqlite --only snapshot
 
       - name: Print snapshot summary
         working-directory: backend

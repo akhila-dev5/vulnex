@@ -1,8 +1,9 @@
 # Render Blueprint — live Vulnex console with React UI and FastAPI API.
 #
 # One FastAPI/uvicorn process serves the API and the Vite-built React interface.
-# The current database stays the existing SQLite snapshot; this PR does not migrate
-# persistence to managed PostgreSQL. Render free instances may sleep while idle.
+# Data: with DATABASE_URL set (Supabase Postgres) triage comments, disputes and PR
+# links persist across deploys; without it the app falls back to the SQLite snapshot
+# in the repo, which resets on every deploy. Render free instances may sleep while idle.
 #
 # Deploy: Render dashboard -> New -> Blueprint -> pick this repo. Render reads
 # this file and prompts for Google OAuth credentials (marked `sync: false`).
@@ -26,6 +27,9 @@ services:
       # this service's /api/auth/google/callback.
       - key: VULNEX_ADMIN_EMAIL
         value: gurujuakhila.dev@gmail.com
+      # Supabase connection string (Session pooler). Secret: set it in the dashboard.
+      - key: DATABASE_URL
+        sync: false
       - key: GOOGLE_OAUTH_CLIENT_ID
         sync: false
       - key: GOOGLE_OAUTH_CLIENT_SECRET

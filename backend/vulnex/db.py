@@ -1,4 +1,8 @@
-"""SQLite persistence layer.
+"""Persistence layer: SQLite by default, PostgreSQL when ``DATABASE_URL`` is set.
+
+Both run the same SQL (``pgcompat`` translates the few dialect differences); the
+Postgres schema is managed by Alembic (``backend/migrations``), the SQLite schema
+by ``SCHEMA`` below.
 
 The dashboard tables (``packages``, ``patches``, ``findings``) hold the *current*
 scan snapshot and are replaced atomically on every scan. ``scans`` keeps a run
@@ -15,7 +19,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable, Iterator
 
-from . import config
+from . import config, pgcompat
+
+_BACKEND_DIR = Path(__file__).resolve().parents[1]
+_migrated: set[str] = set()
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS scans (
@@ -185,7 +192,14 @@ def utcnow() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
-def connect(path: str | Path | None = None) -> sqlite3.Connection:
+def connect(path: str | Path | None = None):
+    """Open the configured database.
+
+    An explicit ``path`` always means that SQLite file (CLI ``--db``, tests, the
+    static export). Without one, ``DATABASE_URL`` selects PostgreSQL.
+    """
+    if path is None and config.DATABASE_URL:
+        return pgcompat.connect(config.DATABASE_URL)
     db_path = Path(path or config.DB_PATH)
     db_path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(db_path), check_same_thread=False)
@@ -195,7 +209,26 @@ def connect(path: str | Path | None = None) -> sqlite3.Connection:
     return conn
 
 
-def init_db(conn: sqlite3.Connection) -> None:
+def migrate_postgres(url: str | None = None) -> None:
+    """Bring the PostgreSQL schema to the latest Alembic revision (idempotent)."""
+    from alembic import command
+    from alembic.config import Config
+
+    url = url or config.DATABASE_URL
+    if url in _migrated:
+        return
+    cfg = Config(str(_BACKEND_DIR / "alembic.ini"))
+    cfg.set_main_option("script_location", str(_BACKEND_DIR / "migrations"))
+    cfg.set_main_option("prepend_sys_path", str(_BACKEND_DIR))
+    cfg.attributes["url"] = url
+    command.upgrade(cfg, "head")
+    _migrated.add(url)
+
+
+def init_db(conn) -> None:
+    if getattr(conn, "dialect", "") == "postgres":
+        migrate_postgres()
+        return
     conn.executescript(SCHEMA)
     # Lightweight in-place migration for existing free-tier SQLite deployments.
     assignment_columns = {

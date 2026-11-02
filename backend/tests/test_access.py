@@ -26,7 +26,8 @@ FINDING = {"cve_id": "CVE-2024-0500", "branch": "3.0-dev",
 
 
 def _seed(client_db_path):
-    conn = db.connect(client_db_path)
+    # With VULNEX_TEST_DATABASE_URL set the API reads PostgreSQL, so seed that.
+    conn = db.connect(None if config.DATABASE_URL else client_db_path)
     db.init_db(conn)
     scan_id = db.start_scan(conn, ["3.0-dev"], "Azure Linux:3")
     db.replace_snapshot(

@@ -687,6 +687,8 @@ def raise_dispute(payload: DisputeRequest, request: Request) -> dict:
     reason = (payload.reason or "").strip()
     if not reason:
         raise HTTPException(status_code=400, detail="A dispute needs a reason")
+    if not payload.cve_id:
+        raise HTTPException(status_code=400, detail="cve_id is required")
     version = (payload.first_unaffected_version or "").strip()
     if payload.never_applicable:
         reason += "\nApplicability: Never Applicable"

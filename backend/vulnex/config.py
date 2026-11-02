@@ -19,6 +19,10 @@ FRONTEND_DIR = PROJECT_ROOT / "frontend"
 DATA_DIR = PROJECT_ROOT / "data"
 CACHE_DIR = Path(os.environ.get("VULNEX_CACHE", DATA_DIR / "cache"))
 DB_PATH = Path(os.environ.get("VULNEX_DB", DATA_DIR / "vulnex.db"))
+# When set (e.g. a Supabase connection string) the app uses PostgreSQL instead of
+# the SQLite file at DB_PATH. Secret: configure it as a host environment variable,
+# never in the repository.
+DATABASE_URL = os.environ.get("DATABASE_URL", "").strip()
 
 # Azure Linux source repository -------------------------------------------
 REPO_OWNER = os.environ.get("VULNEX_REPO_OWNER", "akhila-dev5")
