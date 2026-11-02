@@ -7,6 +7,7 @@ works without any external queue or paid infrastructure.
 
 from __future__ import annotations
 
+import logging
 import threading
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
@@ -20,17 +21,28 @@ from pydantic import BaseModel
 
 from . import __version__, auth, config, db, fixed_cves, triage
 from .enrichment import enrich_cve
+from .pgcompat import DatabaseUnavailable
 from .scanner import ScanOptions, run_scan
 from .sources.vulnerabilitydata import FeedError, VulnerabilityDataSource
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    """Make sure the snapshot DB carries the current schema before serving."""
-    conn = db.connect()
+    """Make sure the snapshot DB carries the current schema before serving.
+
+    An unreachable database must not kill the process: Render would restart it in
+    a loop with "no open ports". Instead the app starts, says why in the log, and
+    ``/api/health`` reports 503 until the database answers (and applies the schema
+    then), so a bad ``DATABASE_URL`` is visible and a good previous deploy keeps
+    serving.
+    """
     try:
-        db.init_db(conn)
-    finally:
-        conn.close()
+        conn = db.connect()
+        try:
+            db.init_db(conn)
+        finally:
+            conn.close()
+    except DatabaseUnavailable as exc:
+        logging.getLogger("uvicorn.error").error("Database unavailable at startup: %s", exc)
     yield
 
 
@@ -275,9 +287,29 @@ class PatchVerdictRequest(FindingRef):
 
 
 # -- read endpoints ---------------------------------------------------------
+@app.exception_handler(DatabaseUnavailable)
+async def _database_unavailable(_request: Request, exc: DatabaseUnavailable) -> JSONResponse:
+    return JSONResponse(status_code=503, content={"detail": f"Database unavailable. {exc}"})
+
+
 @app.get("/api/health")
-def health() -> dict:
-    return {"status": "ok", "version": __version__, "time": _now()}
+def health():
+    body = {"status": "ok", "version": __version__, "time": _now()}
+    if config.DATABASE_URL:
+        try:
+            conn = db.connect()
+            try:
+                db.init_db(conn)  # applies pending migrations if startup could not
+                conn.execute("SELECT 1")
+            finally:
+                conn.close()
+        except DatabaseUnavailable as exc:
+            return JSONResponse(
+                status_code=503,
+                content={**body, "status": "unavailable", "database": "unreachable", "detail": str(exc)},
+            )
+        body["database"] = "postgres"
+    return body
 
 
 @app.get("/api/role")
