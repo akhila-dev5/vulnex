@@ -75,6 +75,8 @@ jobs:
       # refresh the scan tables there too. Triage data is never touched.
       - name: Sync snapshot to Postgres
         if: env.HAS_DB == 'true'
+        # A database problem must never block committing the snapshot or the deploy.
+        continue-on-error: true
         working-directory: backend
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
