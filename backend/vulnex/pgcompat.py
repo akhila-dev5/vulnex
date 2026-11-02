@@ -23,9 +23,43 @@ from urllib.parse import parse_qs, urlparse
 
 import psycopg
 from psycopg.rows import RowFactory
-from psycopg_pool import ConnectionPool
+from psycopg_pool import ConnectionPool, PoolTimeout
 
-__all__ = ["PgConnection", "connect", "normalize_url", "translate", "close_pool", "Row"]
+__all__ = [
+    "PgConnection",
+    "DatabaseUnavailable",
+    "connect",
+    "connection_hint",
+    "normalize_url",
+    "translate",
+    "close_pool",
+    "Row",
+]
+
+# Supabase's *direct* host. On the free tier it resolves to an IPv6 address only,
+# which Render and GitHub Actions cannot reach.
+_SUPABASE_DIRECT_RE = re.compile(r"^db\.[a-z0-9]+\.supabase\.co$", re.IGNORECASE)
+
+
+class DatabaseUnavailable(RuntimeError):
+    """The configured PostgreSQL database cannot be reached."""
+
+
+def connection_hint(url: str) -> str:
+    """A short, secret-free explanation of the most likely cause for ``url``."""
+    host = urlparse(url).hostname or ""
+    if _SUPABASE_DIRECT_RE.match(host):
+        return (
+            f"'{host}' is Supabase's direct connection, which is IPv6-only and cannot be "
+            "reached from Render or GitHub Actions. In Supabase choose Connect -> "
+            "Session pooler and use that connection string "
+            "(host like aws-0-<region>.pooler.supabase.com) as DATABASE_URL."
+        )
+    return (
+        f"Could not connect to '{host or 'the database host'}'. Check DATABASE_URL "
+        "(host, port, user, password; encode '@' in the password as %40) and that the "
+        "database is running."
+    )
 
 # Tables whose primary key is not an ``id`` column (nothing to RETURN).
 _NO_ID_TABLES = {"cve_cache"}
@@ -153,6 +187,9 @@ class PgConnection:
             self._pool.putconn(self._conn)
 
 
+# Seconds to wait for a connection before reporting the database as unavailable.
+CONNECT_TIMEOUT = 10
+
 _pools: dict[str, ConnectionPool] = {}
 _lock = threading.Lock()
 
@@ -169,14 +206,22 @@ def _pool_for(url: str) -> ConnectionPool:
                 # Supabase's transaction pooler (port 6543) cannot use server-side
                 # prepared statements, which psycopg enables after 5 executions.
                 kwargs={"prepare_threshold": None, "autocommit": False},
-                timeout=30,
+                timeout=CONNECT_TIMEOUT,
             )
             _pools[url] = pool
         return pool
 
 
 def connect(url: str) -> PgConnection:
-    return PgConnection(_pool_for(url))
+    """A pooled connection, or :class:`DatabaseUnavailable` (never a hang or a crash).
+
+    The password is never included in the message.
+    """
+    try:
+        return PgConnection(_pool_for(url))
+    except (PoolTimeout, psycopg.Error) as exc:
+        close_pool(url)  # stop the background retry loop; the next call starts fresh
+        raise DatabaseUnavailable(connection_hint(url)) from exc
 
 
 def close_pool(url: str | None = None) -> None:
@@ -185,7 +230,7 @@ def close_pool(url: str | None = None) -> None:
         for key in [url] if url else list(_pools):
             pool = _pools.pop(key, None)
             if pool is not None:
-                pool.close()
+                pool.close(timeout=1)
 
 
 atexit.register(close_pool)
