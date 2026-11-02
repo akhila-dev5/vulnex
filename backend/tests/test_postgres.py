@@ -258,3 +258,45 @@ def test_health_is_ok_on_sqlite(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "DB_PATH", tmp_path / "h.db")
     with TestClient(app) as client:
         assert client.get("/api/health").json()["status"] == "ok"
+
+
+# -- first start on an empty Postgres ----------------------------------------------
+@needs_pg
+def test_empty_database_is_seeded_once_from_the_snapshot(tmp_path, pg):
+    from vulnex.sqlite_import import seed_if_empty
+
+    src = tmp_path / "s.db"
+    _sqlite_with_data(src)
+    first = seed_if_empty(pg, src)
+    assert first["seeded"] is True and first["copied"]["findings"] == 1
+    # A later start, or a newer snapshot in the repo, must not touch existing data.
+    db.add_finding_comment(pg, "CVE-2024-9", "3.0", "SPECS/demo/demo.spec", kind="comment", author="me", body="mine")
+    again = seed_if_empty(pg, src)
+    assert again["seeded"] is False
+    assert len(db.finding_comments(pg, "CVE-2024-9", "3.0", "SPECS/demo/demo.spec")) == 2
+
+
+@needs_pg
+def test_seed_without_a_snapshot_file_is_a_no_op(tmp_path, pg):
+    from vulnex.sqlite_import import seed_if_empty
+
+    out = seed_if_empty(pg, tmp_path / "missing.db")
+    assert out["seeded"] is False and "no snapshot" in out["reason"]
+
+
+@needs_pg
+def test_app_shows_cves_on_first_start_without_a_manual_import(tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from vulnex import api
+
+    src = tmp_path / "bundled.db"
+    _sqlite_with_data(src)
+    monkeypatch.setenv("VULNEX_SEED_SNAPSHOT", "1")
+    monkeypatch.setattr(config, "DB_PATH", src)
+    monkeypatch.setattr(api, "_seeded", False)
+    with TestClient(api.app) as client:  # startup hook runs here
+        assert client.get("/api/health").json()["status"] == "ok"
+        items = client.get("/api/findings", params={"branch": "3.0"}).json()["items"]
+        assert [f["cve_id"] for f in items] == ["CVE-2024-9"]
+        assert client.get("/api/stats", params={"branch": "3.0"}).json()["total_findings"] == 1

@@ -8,6 +8,7 @@ works without any external queue or paid infrastructure.
 from __future__ import annotations
 
 import logging
+import os
 import threading
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
@@ -22,8 +23,33 @@ from pydantic import BaseModel
 from . import __version__, auth, config, db, fixed_cves, triage
 from .enrichment import enrich_cve
 from .pgcompat import DatabaseUnavailable
+from .sqlite_import import seed_if_empty
 from .scanner import ScanOptions, run_scan
 from .sources.vulnerabilitydata import FeedError, VulnerabilityDataSource
+
+_log = logging.getLogger("uvicorn.error")
+_seeded = False
+
+
+def _prepare_database(conn) -> None:
+    """Apply the schema and, on a brand-new Postgres, load the bundled snapshot once."""
+    global _seeded
+    db.init_db(conn)
+    if getattr(conn, "dialect", "") != "postgres" or _seeded:
+        return
+    if os.environ.get("VULNEX_SEED_SNAPSHOT", "1") == "0":
+        _seeded = True
+        return
+    try:
+        result = seed_if_empty(conn, config.DB_PATH)
+    except Exception as exc:  # never let a bad snapshot stop the service
+        conn.rollback()
+        _log.error("Could not load the bundled snapshot into Postgres: %s", exc)
+        return
+    _seeded = True
+    if result.get("seeded"):
+        _log.info("Loaded bundled scan snapshot into Postgres: %s", result["copied"])
+
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
@@ -38,7 +64,7 @@ async def lifespan(_app: FastAPI):
     try:
         conn = db.connect()
         try:
-            db.init_db(conn)
+            _prepare_database(conn)
         finally:
             conn.close()
     except DatabaseUnavailable as exc:
@@ -299,7 +325,7 @@ def health():
         try:
             conn = db.connect()
             try:
-                db.init_db(conn)  # applies pending migrations if startup could not
+                _prepare_database(conn)  # schema + first-run data, if startup could not
                 conn.execute("SELECT 1")
             finally:
                 conn.close()
