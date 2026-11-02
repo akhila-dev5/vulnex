@@ -420,9 +420,10 @@ def _decorate_findings(
         (item.get("cve_id"), item.get("package_name")): item
         for item in db.list_assignments(conn)
     }
+    records = db.triage_index(conn)  # one query, not one per finding
     for finding in findings:
-        finding["triage"] = db.get_triage(
-            conn, finding["cve_id"], finding.get("branch", ""), finding.get("spec_path", "")
+        finding["triage"] = records.get(
+            (finding["cve_id"], finding.get("branch") or "", finding.get("spec_path") or "")
         )
         finding["assignment"] = assignments.get((finding.get("cve_id"), finding.get("package_name")))
         triage.decorate_finding(finding, package, enrichment)
