@@ -19,6 +19,8 @@ _PG_URL = os.environ.get("VULNEX_TEST_DATABASE_URL", "")
 
 @pytest.fixture(autouse=True)
 def _postgres_backend(monkeypatch):
+    # Tests start from empty tables; the first-run snapshot load is tested directly.
+    monkeypatch.setenv("VULNEX_SEED_SNAPSHOT", "0")
     if not _PG_URL:
         yield
         return

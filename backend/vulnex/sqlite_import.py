@@ -107,3 +107,21 @@ def import_sqlite(
     finally:
         src.close()
     return result
+
+
+def seed_if_empty(pg, sqlite_path: str | Path) -> dict[str, Any]:
+    """Load the bundled snapshot into a Postgres that has never had a scan.
+
+    A brand-new Supabase database has the tables (Alembic creates them) but no
+    rows, so the dashboard would show no CVEs until someone ran the import by
+    hand. The scan snapshot ships in the repo (``data/vulnex.db``), so the first
+    start loads it. Anything already in the database is left alone: once a scan
+    exists this does nothing, and triage tables are never overwritten.
+    """
+    if int(pg.execute("SELECT COUNT(*) c FROM scans").fetchone()["c"]):
+        return {"seeded": False, "reason": "database already has scans"}
+    if not Path(sqlite_path).is_file():
+        return {"seeded": False, "reason": f"no snapshot file at {sqlite_path}"}
+    result = import_sqlite(sqlite_path, pg, only="all")
+    result["seeded"] = bool(result["copied"].get("findings"))
+    return result
