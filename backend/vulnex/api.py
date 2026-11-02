@@ -545,7 +545,8 @@ def get_findings(
                 continue
             if owner and owner.lower() not in str(triage_record.get("owner") or "").lower():
                 continue
-            if fixed_version and fixed_version.lower() not in str(finding.get("fixed_version") or "").lower():
+            # Filters on the azurelinux-test fix (version-release), not the upstream version.
+            if fixed_version and fixed_version.lower() not in str(finding.get("azl_fixed_version") or "").lower():
                 continue
             if patch_state == "available" and not patch.get("available"):
                 continue

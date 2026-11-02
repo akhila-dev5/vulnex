@@ -26,6 +26,8 @@ export const SECOND = finding({
   package_version: "1.3.2-1",
   spec_path: "SPECS/zchunk/zchunk.spec",
   status: "patched",
+  azl_fixed_version: "1.3.1-4",
+  azl_fixed_basis: "changelog",
   patch_availability: { applicable: false, available: false, ai_verdict: "Not applicable" },
 });
 

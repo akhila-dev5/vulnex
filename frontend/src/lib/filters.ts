@@ -106,7 +106,7 @@ export function describeFilters(f: Filters): string[] {
   if (f.triage) lines.push(`Triage: ${labelOf(TRIAGE_OPTIONS, f.triage)}`);
   if (f.resolution) lines.push(`Resolution: ${labelOf(RESOLUTION_OPTIONS, f.resolution)}`);
   if (f.owner.trim()) lines.push(`Owner: ${f.owner.trim()}`);
-  if (f.fixed.trim()) lines.push(`Fixed in: ${f.fixed.trim()}`);
+  if (f.fixed.trim()) lines.push(`Fixed in (Azure Linux): ${f.fixed.trim()}`);
   return lines;
 }
 

@@ -602,8 +602,9 @@ function patchMark(f) {
 }
 
 function findingRow(f) {
-  const fix = f.fixed_version
-    ? `<span class="ver">${esc(f.fixed_version)}</span>`
+  // azurelinux-test version-release that patched the CVE (not the upstream version).
+  const fix = f.azl_fixed_version
+    ? `<span class="ver">${esc(f.azl_fixed_version)}</span>`
     : `<span class="muted small">unfixed</span>`;
   return `<tr class="clickable" data-cve="${esc(f.cve_id)}" data-spec="${esc(f.spec_path || "")}" data-branch="${esc(f.branch || "")}">
     <td><span class="cve-id">${esc(f.cve_id)}</span></td>
@@ -1009,7 +1010,7 @@ function pkgFindingCard(f) {
   return `<div class="list-item">
     <div class="grow">
       <h4>${esc(f.package_name)} <span class="muted" style="font-family:var(--sans)">${esc(f.package_version)}</span> ${statusBadge(f.status)}</h4>
-      <p>${f.patch_name ? `backport: <span class="mono">${esc(f.patch_name)}</span> · ` : ""}${f.fixed_version ? `fixed in ${esc(f.fixed_version)} · ` : ""}${esc(f.branch || "")}</p>
+      <p>${f.patch_name ? `backport: <span class="mono">${esc(f.patch_name)}</span> · ` : ""}${f.azl_fixed_version ? `fixed in ${esc(f.azl_fixed_version)} · ` : ""}${esc(f.branch || "")}</p>
       ${f.affected_files?.length ? `<p title="${esc(f.affected_files.join(", "))}">files: <span class="mono">${esc(f.affected_files.slice(0, 4).join(", "))}${f.affected_files.length > 4 ? "…" : ""}</span></p>` : ""}
       <div class="tag-list" style="margin-top:7px">${links.join("")}</div>
     </div>
@@ -1173,7 +1174,7 @@ function triageRow(f, detectedOn) {
     <td>${patchCell(f)}</td>
     <td>${triageStatusPill(status)}</td>
     <td>${t.resolution_status ? resolutionPill(t.resolution_status) : '<span class="muted small">—</span>'}</td>
-    <td><span class="ver">${esc(f.fixed_version || "—")}</span></td>
+    <td><span class="ver">${esc(f.azl_fixed_version || "—")}</span></td>
     <td class="muted small">${esc(t.available_since ? fmtDate(t.available_since) : ((f.patch_availability || {}).available_since ? fmtDate(f.patch_availability.available_since) : "—"))}</td>
     <td><a class="cve-id" href="#/cve/${esc(f.cve_id)}">${esc(f.cve_id)}</a></td>
     <td class="mono small">${esc(t.qualys_ids || "—")}</td>
