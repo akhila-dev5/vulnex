@@ -401,4 +401,4 @@ def test_assignment_rejects_unknown_finding(client, admin):
 def test_frontend_is_served(client):
     resp = client.get("/")
     assert resp.status_code == 200
-    assert "VULNEX" in resp.text
+    assert "<title>Vulnex</title>" in resp.text

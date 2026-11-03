@@ -597,39 +597,69 @@ def list_findings(
     limit: int = 100,
     offset: int = 0,
     branches: list[str] | None = None,
+    triage_status: str = "",
+    resolution_status: str = "",
+    owner: str = "",
+    fixed_version: str = "",
 ) -> tuple[list[dict], int]:
+    """Findings page + total. Workflow filters are applied in SQL, before paging."""
     clauses, params = [], []
     if status:
-        clauses.append("status = ?")
+        clauses.append("f.status = ?")
         params.append(status)
     if severity:
-        clauses.append("severity = ?")
+        clauses.append("f.severity = ?")
         params.append(severity)
     if package:
-        clauses.append("package_name = ?")
+        clauses.append("f.package_name = ?")
         params.append(package)
     if branches:
         placeholders = ",".join("?" for _ in branches)
-        clauses.append(f"branch IN ({placeholders})")
+        clauses.append(f"f.branch IN ({placeholders})")
         params.extend(branches)
     elif branch:
-        clauses.append("branch = ?")
+        clauses.append("f.branch = ?")
         params.append(branch)
     if search:
         clauses.append(
-            "(cve_id LIKE ? OR package_name LIKE ? OR description LIKE ? OR advisory_id LIKE ?)"
+            "(f.cve_id LIKE ? OR f.package_name LIKE ? OR f.description LIKE ? OR f.advisory_id LIKE ?)"
         )
         like = f"%{search}%"
         params.extend([like, like, like, like])
+
+    # Triage columns live in a second table (one row per cve+branch+spec), so join
+    # it only when a workflow filter needs it. A missing row counts as "open".
+    join = ""
+    if triage_status or resolution_status or owner:
+        join = (
+            " LEFT JOIN finding_triage t ON t.cve_id = f.cve_id"
+            " AND t.branch = COALESCE(f.branch, '') AND t.spec_path = COALESCE(f.spec_path, '')"
+        )
+    if triage_status:
+        clauses.append("LOWER(COALESCE(NULLIF(t.triage_status, ''), 'open')) = ?")
+        params.append(triage_status.lower())
+    if resolution_status:
+        clauses.append("LOWER(COALESCE(NULLIF(t.resolution_status, ''), f.status, '')) = ?")
+        params.append(resolution_status.lower())
+    if owner:
+        clauses.append("LOWER(COALESCE(t.owner, '')) LIKE ?")
+        params.append(f"%{owner.lower()}%")
+    if fixed_version:
+        # Only patched findings have an azurelinux-test fix release.
+        clauses.append("f.status = 'patched' AND LOWER(COALESCE(f.fixed_in, '')) LIKE ?")
+        params.append(f"%{fixed_version.lower()}%")
+
     where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
-    total = conn.execute(f"SELECT COUNT(*) c FROM findings{where}", tuple(params)).fetchone()["c"]
+    total = conn.execute(
+        f"SELECT COUNT(*) c FROM findings f{join}{where}", tuple(params)
+    ).fetchone()["c"]
     order = (
-        "CASE severity WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 "
-        "WHEN 'low' THEN 3 WHEN 'none' THEN 4 ELSE 5 END, confidence DESC, cve_id"
+        "CASE f.severity WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 "
+        "WHEN 'low' THEN 3 WHEN 'none' THEN 4 ELSE 5 END, f.confidence DESC, f.cve_id"
     )
     rows = _rows(
         conn,
-        f"SELECT * FROM findings{where} ORDER BY {order} LIMIT ? OFFSET ?",
+        f"SELECT f.* FROM findings f{join}{where} ORDER BY {order} LIMIT ? OFFSET ?",
         [*params, limit, offset],
     )
     for f in rows:
