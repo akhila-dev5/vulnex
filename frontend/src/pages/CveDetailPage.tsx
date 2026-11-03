@@ -37,7 +37,7 @@ export function CveDetailPage({ id }: { id: string }) {
   useEffect(() => {
     document.title = `${id} · Vulnex`;
     return () => {
-      document.title = "Vulnex — Azure Linux CVE dashboard";
+      document.title = "Vulnex";
     };
   }, [id]);
 

@@ -254,6 +254,7 @@ def decorate_finding(
     package: dict | None = None,
     enrichment: dict | None = None,
     include_links: bool = True,
+    include_deep: bool = True,
 ) -> dict:
     """Attach the derived triage views to a finding payload (in place).
 
@@ -267,5 +268,6 @@ def decorate_finding(
     finding["patch_availability"] = patch_availability(
         finding, enrichment, finding.get("triage")
     )
-    finding["deep"] = deep_view(finding, package)
+    if include_deep:
+        finding["deep"] = deep_view(finding, package)
     return finding

@@ -317,12 +317,16 @@ def test_pr_number_is_required(client):
 
 # -- read endpoints expose the derived views --------------------------------
 def test_findings_carry_patch_availability_links_and_deep(client):
+    # List rows are slim: tracker links and the Deep view load on demand.
     finding = client.get("/api/findings", params={"status": "affected"}).json()["items"][0]
-    assert finding["links"][0]["label"] == "Ubuntu"
-    assert finding["links"][-1]["label"] == "NVD"
+    assert "links" not in finding and "deep" not in finding
     pa = finding["patch_availability"]
     assert pa["ai_verdict"] in ("Patch Available", "No Patch Found")
-    assert finding["deep"]["cve_id"] == "CVE-2024-0500"
+
+    detail_finding = client.get("/api/cves/CVE-2024-0500").json()["findings"][0]
+    assert detail_finding["links"][0]["label"] == "Ubuntu"
+    assert detail_finding["links"][-1]["label"] == "NVD"
+    assert detail_finding["deep"]["cve_id"] == "CVE-2024-0500"
 
     deep = client.get(
         "/api/cves/CVE-2024-0500/deep",

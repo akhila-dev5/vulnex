@@ -16,11 +16,12 @@ from typing import Any
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import __version__, auth, config, db, fixed_cves, triage
+from . import __version__, auth, cache, config, db, fixed_cves, triage
 from .enrichment import enrich_cve
 from .pgcompat import DatabaseUnavailable
 from .sqlite_import import seed_if_empty
@@ -85,6 +86,17 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+# The CVE list is a few hundred KB of repetitive JSON; compressing it makes it
+# roughly ten times smaller on the wire.
+app.add_middleware(GZipMiddleware, minimum_size=1000)
+
+
+@app.middleware("http")
+async def _drop_cache_after_writes(request: Request, call_next):
+    response = await call_next(request)
+    if request.method not in ("GET", "HEAD", "OPTIONS"):
+        cache.clear()
+    return response
 
 
 # -- scan manager -----------------------------------------------------------
@@ -147,6 +159,7 @@ class ScanManager:
                 self.state["stage"] = "failed"
         finally:
             conn.close()
+            cache.clear()
             with self._lock:
                 self.state["running"] = False
                 self.state["finished_at"] = _now()
@@ -401,12 +414,15 @@ def auth_google_callback(request: Request, code: str = "", state: str = "") -> R
 def get_stats(branch: str = "") -> dict:
     if branch and not _branches_for_filter(branch):
         raise HTTPException(status_code=400, detail="Choose stable branch 3.0 or 4.0.")
-    with db.session() as conn:
-        data = db.stats(conn, branch=branch or None)
-    data["repository"] = config.repository_metadata()
-    data["roles"] = config.roles_metadata()
-    data["selected_branch"] = branch or None
-    return data
+    def compute() -> dict:
+        with db.session() as conn:
+            data = db.stats(conn, branch=branch or None)
+        data["repository"] = config.repository_metadata()
+        data["roles"] = config.roles_metadata()
+        data["selected_branch"] = branch or None
+        return data
+
+    return cache.cached(("stats", branch), compute)
 
 
 def _decorate_findings(
@@ -414,6 +430,7 @@ def _decorate_findings(
     findings: list[dict],
     package: dict | None = None,
     enrichment: dict | None = None,
+    slim: bool = False,
 ) -> list[dict]:
     """Attach triage state, patch availability, links and the Deep view."""
     assignments = {
@@ -426,7 +443,13 @@ def _decorate_findings(
             (finding["cve_id"], finding.get("branch") or "", finding.get("spec_path") or "")
         )
         finding["assignment"] = assignments.get((finding.get("cve_id"), finding.get("package_name")))
-        triage.decorate_finding(finding, package, enrichment)
+        # List rows stay light: tracker links and the Deep view are fetched when a
+        # CVE or Deep inspection is opened, not shipped for every row.
+        triage.decorate_finding(
+            finding, package, enrichment, include_links=not slim, include_deep=not slim
+        )
+        if slim:
+            finding.pop("raw_sources", None)
     return findings
 
 
@@ -492,73 +515,52 @@ def get_findings(
     Patch filters describe whether a candidate patch reference was found; they
     do not assert that a patch is verified or that a fix has shipped.
     """
-    extra_filters = any((patch_state, triage_status, resolution_status, owner, fixed_version))
-    with db.session() as conn:
-        if not extra_filters:
-            rows, total = db.list_findings(
-                conn,
-                status=status,
-                severity=severity,
-                search=search,
-                package=package,
-                branch=branch if not _branches_for_filter(branch) else "",
-                branches=_branches_for_filter(branch),
-                limit=limit,
-                offset=(page - 1) * limit,
-            )
-            _decorate_findings(conn, rows)
-            return {"items": rows, "total": total, "page": page, "limit": limit}
+    def compute() -> dict:
+        branches = _branches_for_filter(branch)
+        base = dict(
+            status=status,
+            severity=severity,
+            search=search,
+            package=package,
+            branch=branch if not branches else "",
+            branches=branches,
+            triage_status=triage_status,
+            resolution_status=resolution_status,
+            owner=owner,
+            fixed_version=fixed_version,
+        )
+        with db.session() as conn:
+            if not patch_state:
+                # Everything is filtered and paged in SQL; only the visible page
+                # is decorated.
+                rows, total = db.list_findings(
+                    conn, **base, limit=limit, offset=(max(page, 1) - 1) * limit
+                )
+                _decorate_findings(conn, rows, slim=True)
+                return {"items": rows, "total": total, "page": page, "limit": limit}
 
-        # Workflow and patch evidence are derived after joining persisted triage
-        # data, so apply these filters before pagination rather than filtering a
-        # single page in the browser.
-        candidates: list[dict] = []
-        offset = 0
-        batch_size = 1000
-        while True:
-            batch, source_total = db.list_findings(
-                conn,
-                status=status,
-                severity=severity,
-                search=search,
-                package=package,
-                branch=branch if not _branches_for_filter(branch) else "",
-                branches=_branches_for_filter(branch),
-                limit=batch_size,
-                offset=offset,
-            )
-            if not batch:
-                break
-            _decorate_findings(conn, batch)
-            candidates.extend(batch)
-            offset += len(batch)
-            if offset >= source_total:
-                break
+            # Patch availability is derived from enrichment, so it can only be
+            # judged after decorating. Narrow with SQL first, then filter the rest.
+            rows, _ = db.list_findings(conn, **base, limit=1_000_000, offset=0)
+            _decorate_findings(conn, rows, slim=True)
 
-        filtered = []
-        for finding in candidates:
-            triage_record = finding.get("triage") or {}
-            patch = finding.get("patch_availability") or {}
-            if triage_status and str(triage_record.get("triage_status") or "open").lower() != triage_status.lower():
-                continue
-            if resolution_status and str(triage_record.get("resolution_status") or finding.get("status") or "").lower() != resolution_status.lower():
-                continue
-            if owner and owner.lower() not in str(triage_record.get("owner") or "").lower():
-                continue
-            # Filters on the azurelinux-test fix (version-release), not the upstream version.
-            if fixed_version and fixed_version.lower() not in str(finding.get("azl_fixed_version") or "").lower():
-                continue
-            if patch_state == "available" and not patch.get("available"):
-                continue
-            # "Patch not available" means no candidate patch was found,
-            # including findings where patch applicability is not established.
-            if patch_state == "unavailable" and patch.get("available"):
-                continue
-            filtered.append(finding)
-
-        total = len(filtered)
+        want = patch_state == "available"
+        # "Patch not available" means no candidate patch was found, including
+        # findings where patch applicability is not established.
+        filtered = [
+            f for f in rows if bool((f.get("patch_availability") or {}).get("available")) == want
+        ] if patch_state in ("available", "unavailable") else rows
         start_at = max(page - 1, 0) * limit
-        return {"items": filtered[start_at:start_at + limit], "total": total, "page": page, "limit": limit}
+        return {
+            "items": filtered[start_at:start_at + limit],
+            "total": len(filtered),
+            "page": page,
+            "limit": limit,
+        }
+
+    key = ("findings", severity, status, search, package, branch, page, limit,
+           patch_state, triage_status, resolution_status, owner, fixed_version)
+    return cache.cached(key, compute)
 
 
 @app.get("/api/cves/{cve_id}")
