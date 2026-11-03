@@ -2,7 +2,7 @@
 PY      ?= python3
 VENV    := backend/.venv
 PYBIN   := .venv/bin/python
-BRANCHES ?= 3.0-dev,fasttrack/3.0
+BRANCHES ?= 3.0
 PORT    ?= 8000
 
 .PHONY: help venv install test scan serve export screenshots clean
@@ -21,7 +21,7 @@ install: venv ## Install runtime + dev dependencies
 test: ## Run the scanner test suite
 	cd backend && $(PYBIN) -m pytest -q
 
-scan: ## Run a full scan over both Azure Linux branches
+scan: ## Run a full scan of the Azure Linux branch(es) in BRANCHES
 	cd backend && $(PYBIN) -m vulnex.cli scan --branches "$(BRANCHES)"
 	cd backend && $(PYBIN) -m vulnex.cli stats
 
@@ -31,8 +31,8 @@ serve: ## Serve the live dashboard + API on :$(PORT)
 export: ## Build the static GitHub Pages dashboard into site/
 	cd backend && $(PYBIN) -m vulnex.cli export --out ../site
 
-screenshots: ## Regenerate docs/screenshots (needs the optional playwright extra)
-	cd backend && $(PYBIN) ../scripts/screenshots.py
+screenshots: ## Retake docs/images (start `make serve` first; needs playwright)
+	python3 scripts/screenshots.py http://localhost:$(PORT)
 
 clean: ## Remove caches and generated site output
 	rm -rf backend/.pytest_cache site data/cache

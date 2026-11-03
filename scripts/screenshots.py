@@ -1,97 +1,58 @@
-"""Capture dashboard screenshots for the README.
+"""Capture the screenshots used in the docs.
 
-Boots the FastAPI app on a throwaway port inside this process, renders a handful
-of dashboard routes with a headless Chromium, and writes PNGs to
-``docs/screenshots/``. Requires the optional ``playwright`` dev dependency::
+Start the app first (``make serve``, or any running Vulnex URL), then::
 
     pip install playwright && python -m playwright install chromium
-    python scripts/screenshots.py
+    python scripts/screenshots.py [http://localhost:8000]
 
-This is a documentation helper only; it is never used by the scanner or the API.
+Writes PNGs to ``docs/images/``. A documentation helper only; the scanner and the
+API never use it.
 """
 
 from __future__ import annotations
 
-import socket
+import json
 import sys
-import threading
-import time
+import urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "backend"))
-
-import uvicorn  # noqa: E402
-
-from vulnex import db  # noqa: E402
-from vulnex.api import app  # noqa: E402
-
-OUT_DIR = ROOT / "docs" / "screenshots"
-
-
-def _free_port() -> int:
-    with socket.socket() as s:
-        s.bind(("127.0.0.1", 0))
-        return s.getsockname()[1]
-
-
-def _wait_up(port: int, timeout: float = 30.0) -> None:
-    import urllib.request
-
-    deadline = time.time() + timeout
-    while time.time() < deadline:
-        try:
-            urllib.request.urlopen(f"http://127.0.0.1:{port}/api/health", timeout=2)
-            return
-        except Exception:
-            time.sleep(0.3)
-    raise RuntimeError("server did not become ready")
+OUT_DIR = ROOT / "docs" / "images"
+BASE = (sys.argv[1] if len(sys.argv) > 1 else "http://localhost:8000").rstrip("/")
 
 
 def _pick_cve() -> str:
-    with db.session() as conn:
-        row = conn.execute(
-            "SELECT cve_id FROM findings WHERE severity IN ('critical','high') "
-            "AND status = 'affected' ORDER BY confidence DESC LIMIT 1"
-        ).fetchone()
-    return row["cve_id"] if row else "CVE-2026-19931"
+    """A CVE that touches several packages, so the CVE page has something to show."""
+    url = f"{BASE}/api/findings?severity=critical&limit=300"
+    items = json.load(urllib.request.urlopen(url, timeout=30))["items"]
+    counts: dict[str, int] = {}
+    for item in items:
+        counts[item["cve_id"]] = counts.get(item["cve_id"], 0) + 1
+    return max(counts, key=lambda cve: counts[cve]) if counts else "CVE-2024-0001"
 
 
 def main() -> int:
-    OUT_DIR.mkdir(parents=True, exist_ok=True)
-    port = _free_port()
-    config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning")
-    server = uvicorn.Server(config)
-    thread = threading.Thread(target=server.run, daemon=True)
-    thread.start()
-    _wait_up(port)
-    base = f"http://127.0.0.1:{port}"
-
     from playwright.sync_api import sync_playwright
 
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    for old in OUT_DIR.glob("*.png"):
+        old.unlink()
+    cve = _pick_cve()
     shots = [
-        ("dashboard", "#/", 2200),
-        ("affected", "#/affected", 1800),
-        ("packages", "#/packages", 1500),
-        ("cve-detail", f"#/cve/{_pick_cve()}", 2600),
-        ("triage", "#/triage", 2400),
-        ("scan", "#/scan", 1600),
+        ("cves", "#/", "CVE list with the filter sidebar"),
+        ("packages", "#/packages", "Package list"),
+        ("cve-detail", f"#/cve/{cve}", f"{cve} and every package it affects"),
     ]
-
     with sync_playwright() as p:
         browser = p.chromium.launch()
         page = browser.new_page(viewport={"width": 1440, "height": 900}, device_scale_factor=1)
-        for name, route, settle in shots:
-            page.goto(base + "/", wait_until="load")
-            page.evaluate(f"location.hash = {route!r}")
-            page.wait_for_timeout(settle)
-            target = OUT_DIR / f"{name}.jpg"
-            page.screenshot(path=str(target), full_page=True, type="jpeg", quality=80)
-            print(f"wrote {target.relative_to(ROOT)}")
+        for name, route, label in shots:
+            page.goto(f"{BASE}/{route}")
+            page.wait_for_load_state("networkidle")
+            page.wait_for_timeout(800)
+            page.screenshot(path=str(OUT_DIR / f"{name}.png"), full_page=False)
+            print(f"{name}.png  {label}")
         browser.close()
-
-    server.should_exit = True
-    thread.join(timeout=10)
     return 0
 
 
