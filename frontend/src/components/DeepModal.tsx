@@ -78,6 +78,22 @@ export function DeepModal({ finding, onClose }: { finding: Finding; onClose: () 
             )}
           </section>
           <section>
+            <h3>Upstream fixed version</h3>
+            {data?.upstream_fixed_version ? (
+              <div>
+                <strong>{data.upstream_fixed_version}</strong>
+                <p>
+                  <small>
+                    The version the upstream project fixed this in. It is not the Azure Linux fix; the
+                    table's Fixed version column shows the azurelinux-test release that patched it.
+                  </small>
+                </p>
+              </div>
+            ) : (
+              <p className="muted">No upstream fixed version is recorded for this CVE.</p>
+            )}
+          </section>
+          <section>
             <h3>Source artifact</h3>
             {data?.tarball?.name ? (
               <div>

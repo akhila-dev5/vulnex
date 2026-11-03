@@ -3,6 +3,7 @@ import { AlertCircle, ArrowLeft, ArrowUpRight, ChevronDown, ChevronRight, Extern
 import { isAbort, messageOf, request } from "../api/client";
 import type { CveDetail, Finding, FindingComment } from "../api/types";
 import { useApp } from "../app-context";
+import { AzlFixedVersion } from "../components/AzlFixedVersion";
 import { ActionsMenu } from "../components/ActionsMenu";
 import { DeepModal } from "../components/DeepModal";
 import { FindingPanel, type CommentsState } from "../components/FindingPanel";
@@ -220,7 +221,7 @@ export function CveDetailPage({ id }: { id: string }) {
                             <td><PatchIcon finding={finding} /></td>
                             <td><StatusPill tone={statusTone(triageStatusOf(finding))}>{statusLabel(triageStatusOf(finding))}</StatusPill></td>
                             <td><StatusPill tone={statusTone(resolutionOf(finding))}>{statusLabel(resolutionOf(finding))}</StatusPill></td>
-                            <td>{finding.fixed_version || "—"}</td>
+                            <td><AzlFixedVersion finding={finding} /></td>
                             <td>{ownerOf(finding) || "—"}</td>
                             <td>
                               <button className="btn deep-btn" onClick={() => setDeepTarget(finding)} aria-label={`Deep inspection of ${label}`}>

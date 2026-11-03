@@ -126,8 +126,8 @@ export function FilterSidebar({
               <Field label="Resolution status">
                 <Select value={draft.resolution} onChange={set("resolution")} options={RESOLUTION_OPTIONS} anyLabel="Any resolution" />
               </Field>
-              <Field label="Fixed version">
-                <input type="search" placeholder="e.g. 3.13.15" {...text("fixed")} />
+              <Field label="Fixed version (Azure Linux)">
+                <input type="search" placeholder="e.g. 3.13.15-2" {...text("fixed")} />
               </Field>
               <Field label="Owner">
                 <input type="search" placeholder="Owner email" {...text("owner")} />

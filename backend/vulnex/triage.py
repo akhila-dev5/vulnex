@@ -228,10 +228,25 @@ def deep_view(finding: dict, package: dict | None = None) -> dict:
         "spec_path": spec_path,
         "spec_url": package.get("spec_url") or finding.get("spec_url") or "",
         "tarball": tarball,
+        # What the upstream project fixed it in; not what Azure Linux has shipped.
+        "upstream_fixed_version": finding.get("fixed_version") or "",
         "affected_files": affected,
         "backport_patches": backports,
         "notes": notes,
     }
+
+
+def azl_fixed_version(finding: dict) -> tuple[str | None, str | None]:
+    """The azurelinux-test version-release in which this CVE was patched, and how we know.
+
+    This is the *distro* fix: the spec release that shipped the patch, read from
+    the spec's %changelog. It is None unless the finding is ``patched``. It is
+    deliberately NOT the upstream project's fixed version (``fixed_version``): an
+    upstream release number says nothing about what Azure Linux has shipped.
+    """
+    if finding.get("status") != "patched":
+        return None, None
+    return finding.get("fixed_in") or None, finding.get("fixed_in_basis") or None
 
 
 def decorate_finding(
@@ -248,6 +263,7 @@ def decorate_finding(
     """
     if include_links:
         finding["links"] = website_links(finding.get("cve_id", ""))
+    finding["azl_fixed_version"], finding["azl_fixed_basis"] = azl_fixed_version(finding)
     finding["patch_availability"] = patch_availability(
         finding, enrichment, finding.get("triage")
     )

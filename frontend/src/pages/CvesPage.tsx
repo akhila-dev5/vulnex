@@ -3,6 +3,7 @@ import { Activity, AlertCircle, AlertTriangle, CheckCircle2, Clock3, FileSearch,
 import { isAbort, messageOf, request } from "../api/client";
 import type { Finding, PageResult, Stats } from "../api/types";
 import { useApp } from "../app-context";
+import { AzlFixedVersion } from "../components/AzlFixedVersion";
 import { CveLink } from "../components/CveLink";
 import { FilterSidebar } from "../components/FilterSidebar";
 import { Pagination } from "../components/Pagination";
@@ -213,7 +214,7 @@ export function CvesPage() {
                         <td><PatchIcon finding={row} /></td>
                         <td><StatusPill tone={statusTone(triageStatusOf(row))}>{statusLabel(triageStatusOf(row))}</StatusPill></td>
                         <td><StatusPill tone={statusTone(resolutionOf(row))}>{statusLabel(resolutionOf(row))}</StatusPill></td>
-                        <td>{row.fixed_version || "—"}</td>
+                        <td><AzlFixedVersion finding={row} /></td>
                         <td>{ownerOf(row) || "—"}</td>
                       </tr>
                     ))}

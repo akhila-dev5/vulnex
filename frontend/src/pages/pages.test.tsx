@@ -134,7 +134,7 @@ describe("CVE page", () => {
   });
 
   it("opens the Deep view for one package", async () => {
-    const deep = { affected_files: ["lib/x.c"], backport_patches: [], tarball: { name: "rabbitmq.tar.gz", available: true }, notes: [] };
+    const deep = { upstream_fixed_version: "9.9.9-upstream", affected_files: ["lib/x.c"], backport_patches: [], tarball: { name: "rabbitmq.tar.gz", available: true }, notes: [] };
     const { fn, calls } = stubFetch(routes({ "/cves/CVE-2026-1000/deep": deep }));
     vi.stubGlobal("fetch", fn);
     const user = userEvent.setup();
@@ -142,6 +142,8 @@ describe("CVE page", () => {
     await screen.findByRole("heading", { level: 1 });
     await user.click(screen.getByRole("button", { name: /deep inspection of rabbitmq-server/i }));
     expect(await screen.findByText("lib/x.c")).toBeInTheDocument();
+    const upstream = screen.getByRole("heading", { name: "Upstream fixed version" }).closest("section")!;
+    expect(within(upstream).getByText("9.9.9-upstream")).toBeInTheDocument();
     expect(calls.at(-1)?.url.searchParams.get("spec")).toBe("SPECS/rabbitmq-server/rabbitmq-server.spec");
   });
 
@@ -226,5 +228,50 @@ describe("CVE page", () => {
     renderWith(guestContext, <CveDetailPage id="CVE-2000-0001" />);
     expect(await screen.findByRole("alert")).toHaveTextContent(/CVE not found in the current scan/);
     expect(screen.getByRole("link", { name: /all cves/i })).toHaveAttribute("href", "#/");
+  });
+});
+
+
+describe("Fixed version column (azurelinux-test release, never the upstream version)", () => {
+  const fixedCell = (name: string) => {
+    const row = screen.getByText(name).closest("tr")!;
+    const header = screen.getAllByRole("columnheader").findIndex((h) => h.textContent === "Fixed version");
+    return within(row).getAllByRole("cell")[header]!;
+  };
+
+  it("on the CVE page: an unfixed package is blank even though upstream has a fix", async () => {
+    vi.stubGlobal("fetch", stubFetch({ "/cves/CVE-2026-1000": DETAIL, "/triage/comments": COMMENTS }).fn);
+    renderWith(guestContext, <CveDetailPage id="CVE-2026-1000" />);
+    await screen.findByRole("heading", { level: 1 });
+    // rabbitmq-server is affected and its upstream fixed version is 3.13.15.
+    expect(fixedCell("rabbitmq-server")).toHaveTextContent("—");
+    expect(screen.queryByText("3.13.15")).toBeNull();
+    // zchunk is patched: show the release that patched it.
+    expect(fixedCell("zchunk")).toHaveTextContent("1.3.1-4");
+  });
+
+  it("on the CVEs list: same rule", async () => {
+    vi.stubGlobal("fetch", stubFetch({ "/stats": STATS, "/findings": { items: [finding(), SECOND], total: 2 } }).fn);
+    renderWith(guestContext, <CvesPage />);
+    await screen.findByText("rabbitmq-server");
+    expect(fixedCell("rabbitmq-server")).toHaveTextContent("—");
+    expect(fixedCell("zchunk")).toHaveTextContent("1.3.1-4");
+    expect(screen.queryByText("3.13.15")).toBeNull();
+  });
+
+  it("marks a release that is only bounded by the scanned version", async () => {
+    const bounded = finding({ status: "patched", package_name: "demo", azl_fixed_version: "2.0-5", azl_fixed_basis: "spec-evr" });
+    vi.stubGlobal("fetch", stubFetch({ "/stats": STATS, "/findings": { items: [bounded], total: 1 } }).fn);
+    renderWith(guestContext, <CvesPage />);
+    await screen.findByText("demo");
+    const cell = fixedCell("demo");
+    expect(cell).toHaveTextContent("2.0-5");
+    expect(within(cell).getByTitle(/No changelog entry names this CVE/)).toBeInTheDocument();
+  });
+
+  it("labels the sidebar filter as the Azure Linux fix", async () => {
+    vi.stubGlobal("fetch", stubFetch({ "/stats": STATS, "/findings": { items: [], total: 0 } }).fn);
+    renderWith(guestContext, <CvesPage />);
+    expect(await screen.findByLabelText(/fixed version \(azure linux\)/i)).toBeInTheDocument();
   });
 });

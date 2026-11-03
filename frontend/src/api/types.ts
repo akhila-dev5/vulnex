@@ -52,7 +52,12 @@ export type Finding = {
   cvss_score?: number | null;
   cvss_vector?: string | null;
   description?: string;
+  /** The UPSTREAM project's fixed version. Not what Azure Linux has shipped; shown only in Deep. */
   fixed_version?: string;
+  /** azurelinux-test version-release in which this CVE was patched (changelog); null while unfixed. */
+  azl_fixed_version?: string | null;
+  /** "changelog" = named in the spec changelog; "spec-evr" = bounded by the scanned release. */
+  azl_fixed_basis?: string | null;
   advisory_id?: string;
   source?: string;
   triage?: TriageRecord | null;
@@ -79,6 +84,7 @@ export type DeepView = {
   branch?: string;
   spec_path?: string;
   spec_url?: string;
+  upstream_fixed_version?: string;
   tarball?: { name?: string; url?: string; available?: boolean | null } | null;
   affected_files?: Array<string | { path?: string; file?: string; url?: string; name?: string }>;
   backport_patches?: Array<{ filename?: string; url?: string; present?: boolean | null }>;
