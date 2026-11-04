@@ -46,12 +46,13 @@ export const DETAIL: CveDetail = {
   ],
 };
 
-export const ADMIN_ROLE: RoleInfo = { role: "admin", write_enabled: true };
+export const ADMIN_ROLE: RoleInfo = { role: "admin", write_enabled: true, can_approve_dispute: true };
 
 export const adminContext: AppContextValue = {
   token: "tok",
   roleInfo: ADMIN_ROLE,
   canAdmin: true,
+  canContribute: true,
   canWrite: true,
   notify: () => undefined,
   signOut: () => undefined,
@@ -61,6 +62,20 @@ export const guestContext: AppContextValue = {
   token: "",
   roleInfo: { role: "viewer" },
   canAdmin: false,
+  canContribute: false,
+  canWrite: false,
+  notify: () => undefined,
+  signOut: () => undefined,
+};
+
+export const DEVELOPER_ROLE: RoleInfo = { role: "developer", can_comment: true, can_dispute: true, can_set_pr: true };
+
+/** A signed-in developer: GitHub PR, comments and disputes, but no assign / patch verdict / approvals. */
+export const developerContext: AppContextValue = {
+  token: "dev-tok",
+  roleInfo: DEVELOPER_ROLE,
+  canAdmin: false,
+  canContribute: true,
   canWrite: false,
   notify: () => undefined,
   signOut: () => undefined,

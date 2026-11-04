@@ -13,10 +13,10 @@ import {
   toPackageParams,
   type Filters,
 } from "./filters";
-import { groupByCve, latestDispute, sortForCvePage, specUrl } from "./findings";
+import { groupByCve, latestDispute, sortForCvePage, specUrl, triageStatusOf } from "./findings";
 import { hrefFor, parseRoute } from "./route";
 import { SESSION_KEY, clearToken, consumeTokenHandoff, loadToken, saveToken } from "./session";
-import { buildTriageRequest, initialValues, isSubmittable } from "./triage";
+import { buildTriageRequest, canUseAction, initialValues, isSubmittable } from "./triage";
 import { finding } from "../test/fixtures";
 
 describe("route", () => {
@@ -24,6 +24,8 @@ describe("route", () => {
     expect(parseRoute("")).toEqual({ name: "cves" });
     expect(parseRoute("#/")).toEqual({ name: "cves" });
     expect(parseRoute("#/packages")).toEqual({ name: "packages" });
+    expect(parseRoute("#/disputes")).toEqual({ name: "disputes" });
+    expect(hrefFor({ name: "disputes" })).toBe("#/disputes");
     expect(parseRoute("#/cve/cve-2026-1234")).toEqual({ name: "cve", id: "CVE-2026-1234" });
   });
   it("rejects malformed ids and unknown paths", () => {
@@ -169,5 +171,25 @@ describe("triage requests", () => {
   it("pre-fills the PR form from what is recorded", () => {
     const withPr = finding({ triage: { github_pr_number: "7", github_pr_url: "https://github.com/a/b/pull/7" } });
     expect(initialValues(withPr)).toMatchObject({ prNumber: "7", prUrl: "https://github.com/a/b/pull/7" });
+  });
+});
+
+describe("who may use which action", () => {
+  const dev = { canAdmin: false, canContribute: true };
+  const admin = { canAdmin: true, canContribute: true };
+  const guest = { canAdmin: false, canContribute: false };
+  it("opens PR, comment and dispute to developers; keeps assign and patch verdict for the administrator", () => {
+    for (const action of ["pr", "comment", "dispute"] as const) {
+      expect([canUseAction(action, dev), canUseAction(action, admin), canUseAction(action, guest)]).toEqual([true, true, false]);
+    }
+    for (const action of ["assign", "patch"] as const) {
+      expect([canUseAction(action, dev), canUseAction(action, admin), canUseAction(action, guest)]).toEqual([false, true, false]);
+    }
+  });
+  it("shows a pending dispute in the triage column, ahead of the stored status", () => {
+    const base = finding();
+    expect(triageStatusOf({ ...base, dispute: { id: 1, status: "pending" } })).toBe("pending_dispute");
+    expect(triageStatusOf({ ...base, dispute: { id: 1, status: "approved" }, triage: { triage_status: "disputed" } })).toBe("disputed");
+    expect(triageStatusOf({ ...base, dispute: null })).toBe("open");
   });
 });

@@ -1,7 +1,7 @@
 // Shapes returned by the Vulnex FastAPI backend (backend/vulnex/api.py).
 
 export type RoleInfo = {
-  role: "viewer" | "admin" | "automation";
+  role: "viewer" | "admin" | "developer" | "automation";
   identity?: { identity?: string; email?: string };
   methods?: { google?: boolean; google_email?: string };
   write_enabled?: boolean;
@@ -11,7 +11,33 @@ export type RoleInfo = {
   can_scan?: boolean;
   can_set_patch_verdict?: boolean;
   can_set_pr?: boolean;
+  can_assign?: boolean;
+  can_approve_dispute?: boolean;
 };
+
+export type DisputeStatus = "pending" | "approved" | "rejected";
+
+/** A dispute request (disputes table): raised by a developer, decided by the administrator. */
+export type Dispute = {
+  id: number;
+  cve_id: string;
+  branch?: string;
+  spec_path?: string;
+  package_name?: string;
+  package_version?: string;
+  severity?: string;
+  reason: string;
+  first_unaffected_version?: string;
+  never_applicable?: number;
+  status: DisputeStatus;
+  requested_by?: string;
+  requested_at?: string;
+  decided_by?: string;
+  decided_at?: string | null;
+  decision_note?: string;
+};
+
+export type DisputeList = PageResult<Dispute> & { counts: Record<DisputeStatus, number> };
 
 /** Per-finding workflow state stored by the backend (finding_triage table). */
 export type TriageRecord = {
@@ -41,6 +67,8 @@ export type PatchAvailability = {
 };
 
 export type Finding = {
+  /** Newest dispute request for this package, if any (pending until the administrator decides). */
+  dispute?: { id: number; status: DisputeStatus } | null;
   cve_id: string;
   package_name: string;
   package_version?: string;

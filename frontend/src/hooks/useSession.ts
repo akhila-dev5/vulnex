@@ -50,6 +50,7 @@ export function useSession() {
   }, [token]);
 
   const canAdmin = roleInfo.role === "admin";
+  const canContribute = canAdmin || roleInfo.role === "developer";
   const canWrite = Boolean(roleInfo.write_enabled && canAdmin);
-  return { token, roleInfo, canAdmin, canWrite, signOut };
+  return { token, roleInfo, canAdmin, canContribute, canWrite, signOut };
 }

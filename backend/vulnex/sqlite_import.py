@@ -23,11 +23,12 @@ TRIAGE_TABLES = (
     "assignment_comments",
     "finding_triage",
     "finding_comments",
+    "disputes",
     "cve_cache",
 )
 # Tables with a serial ``id`` whose sequence must follow the imported ids.
 _SERIAL = set(SNAPSHOT_TABLES) | {
-    "assignments", "assignment_comments", "finding_triage", "finding_comments",
+    "assignments", "assignment_comments", "finding_triage", "finding_comments", "disputes",
 }
 _BATCH = 1000
 

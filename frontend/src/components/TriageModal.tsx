@@ -6,6 +6,8 @@ import { useApp } from "../app-context";
 import {
   ACTION_TITLE,
   ASSIGNEES,
+  ADMIN_ONLY_ACTIONS,
+  canUseAction,
   DISPUTE_REASONS,
   buildTriageRequest,
   initialValues,
@@ -14,6 +16,9 @@ import {
   type TriageValues,
 } from "../lib/triage";
 import { Modal } from "./Modal";
+
+/** What the server answered; `approved` is set for a dispute the administrator raised (approved at once). */
+export type SaveResult = { approved?: boolean };
 
 /** One form for every triage action (assign, dispute, comment, patch verdict, GitHub PR). */
 export function TriageModal({
@@ -25,9 +30,10 @@ export function TriageModal({
   action: TriageAction;
   finding: Finding;
   onClose: () => void;
-  onSaved: (action: TriageAction, finding: Finding) => void;
+  onSaved: (action: TriageAction, finding: Finding, result: SaveResult) => void;
 }) {
-  const { token, canAdmin } = useApp();
+  const { token, canAdmin, canContribute } = useApp();
+  const allowed = canUseAction(action, { canAdmin, canContribute });
   const [values, setValues] = useState<TriageValues>(() => initialValues(finding));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -40,8 +46,8 @@ export function TriageModal({
     setSaving(true);
     setError("");
     try {
-      await request(path, { method: "POST", body: JSON.stringify(body) }, token);
-      onSaved(action, finding);
+      const result = await request<SaveResult>(path, { method: "POST", body: JSON.stringify(body) }, token);
+      onSaved(action, finding, result ?? {});
     } catch (e) {
       setError(messageOf(e));
       setSaving(false);
@@ -80,6 +86,11 @@ export function TriageModal({
 
       {action === "dispute" && (
         <>
+          <p className="modal-note">
+            {canAdmin
+              ? "As the administrator your dispute is approved straight away and this package is marked Disputed."
+              : "The administrator reviews disputes in the Disputes section. Once approved, this package is marked Disputed."}
+          </p>
           <label>
             Dispute reason
             <select value={values.disputeTag} onChange={(e) => set("disputeTag", e.target.value)}>
@@ -182,10 +193,16 @@ export function TriageModal({
         <button
           className="btn primary"
           onClick={() => void save()}
-          disabled={!canAdmin || saving || !isSubmittable(action, values)}
-          title={canAdmin ? undefined : "Administrator sign-in required"}
+          disabled={!allowed || saving || !isSubmittable(action, values)}
+          title={
+            allowed
+              ? undefined
+              : ADMIN_ONLY_ACTIONS.includes(action)
+                ? "Administrator sign-in required"
+                : "Sign in with Google to do this"
+          }
         >
-          {saving ? "Saving…" : action === "assign" ? "Assign CVE" : "Save changes"}
+          {saving ? "Saving…" : action === "assign" ? "Assign CVE" : action === "dispute" ? "Raise dispute" : "Save changes"}
         </button>
       </div>
     </Modal>

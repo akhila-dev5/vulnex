@@ -6,6 +6,7 @@ import { useHashRoute } from "./hooks/useHashRoute";
 import { useSession } from "./hooks/useSession";
 import { CveDetailPage } from "./pages/CveDetailPage";
 import { CvesPage } from "./pages/CvesPage";
+import { DisputesPage } from "./pages/DisputesPage";
 import { PackagesPage } from "./pages/PackagesPage";
 import { hrefFor } from "./lib/route";
 
@@ -31,11 +32,12 @@ function App() {
       token: session.token,
       roleInfo: session.roleInfo,
       canAdmin: session.canAdmin,
+      canContribute: session.canContribute,
       canWrite: session.canWrite,
       signOut: session.signOut,
       notify,
     }),
-    [session.token, session.roleInfo, session.canAdmin, session.canWrite, session.signOut, notify],
+    [session.token, session.roleInfo, session.canAdmin, session.canContribute, session.canWrite, session.signOut, notify],
   );
 
   return (
@@ -46,6 +48,8 @@ function App() {
           <CveDetailPage key={route.id} id={route.id} />
         ) : route.name === "packages" ? (
           <PackagesPage />
+        ) : route.name === "disputes" ? (
+          <DisputesPage />
         ) : route.name === "cves" ? (
           <CvesPage />
         ) : (

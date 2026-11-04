@@ -3,7 +3,8 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AppContext, type AppContextValue } from "../app-context";
 import { TopNav } from "../components/TopNav";
-import { ADMIN_ROLE, DETAIL, OTHER_CVE, SECOND, adminContext, finding, guestContext, stubFetch } from "../test/fixtures";
+import { ADMIN_ROLE, DETAIL, OTHER_CVE, SECOND, adminContext, developerContext, finding, guestContext, stubFetch } from "../test/fixtures";
+import { DisputesPage } from "./DisputesPage";
 import { CveDetailPage } from "./CveDetailPage";
 import { CvesPage } from "./CvesPage";
 
@@ -23,15 +24,29 @@ beforeEach(() => vi.unstubAllGlobals());
 afterEach(() => vi.unstubAllGlobals());
 
 describe("top navigation", () => {
-  it("offers CVEs and Packages", () => {
+  it("offers CVEs, Packages and Disputes, in that order", () => {
     renderWith(guestContext, <TopNav route={{ name: "cves" }} />);
     const nav = screen.getByRole("navigation", { name: /main navigation/i });
-    expect(within(nav).getAllByRole("link").map((a) => a.textContent)).toEqual(["CVEs", "Packages"]);
+    expect(within(nav).getAllByRole("link").map((a) => a.textContent)).toEqual(["CVEs", "Packages", "Disputes"]);
     expect(within(nav).getByRole("link", { name: "CVEs" })).toHaveAttribute("aria-current", "page");
   });
   it("keeps CVEs highlighted on a CVE page", () => {
     renderWith(guestContext, <TopNav route={{ name: "cve", id: "CVE-2026-1" }} />);
     expect(screen.getByRole("link", { name: "CVEs" })).toHaveAttribute("aria-current", "page");
+  });
+  it("labels the signed-in role", () => {
+    const { unmount } = renderWith(developerContext, <TopNav route={{ name: "cves" }} />);
+    expect(screen.getByText("Developer")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /sign out/i })).toBeInTheDocument();
+    unmount();
+    vi.stubGlobal("fetch", stubFetch({ "/disputes": { items: [], total: 0, counts: { pending: 3, approved: 0, rejected: 0 } } }).fn);
+    renderWith(adminContext, <TopNav route={{ name: "cves" }} />);
+    expect(screen.getByText("Administrator")).toBeInTheDocument();
+  });
+  it("shows the administrator how many disputes are waiting", async () => {
+    vi.stubGlobal("fetch", stubFetch({ "/disputes": { items: [], total: 0, counts: { pending: 3, approved: 1, rejected: 0 } } }).fn);
+    renderWith(adminContext, <TopNav route={{ name: "cves" }} />);
+    expect(await screen.findByLabelText("3 waiting for approval")).toBeInTheDocument();
   });
   it("shows sign-in to guests and sign-out to the administrator", () => {
     const { unmount } = renderWith(guestContext, <TopNav route={{ name: "cves" }} />);
@@ -156,7 +171,7 @@ describe("CVE page", () => {
     const items = screen.getAllByRole("menuitem");
     expect(items.map((i) => i.textContent?.trim())).toEqual(["Set GitHub PR", "Dispute", "Add comment", "Patch verdict", "Assign reviewer"]);
     items.forEach((item) => expect(item).toBeDisabled());
-    expect(screen.getByText(/sign in as the administrator/i)).toBeInTheDocument();
+    expect(screen.getByText(/sign in with google to use these actions/i)).toBeInTheDocument();
   });
 
   it("draws the Actions menu outside the table so the table's scroll box cannot clip it", async () => {
@@ -186,7 +201,7 @@ describe("CVE page", () => {
     expect(screen.getByRole("link", { name: /#19015/ })).toHaveAttribute("href", "https://github.com/akhila-dev5/azurelinux-test/pull/19015");
     expect(screen.getByRole("heading", { name: "Patch availability" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Triage information" })).toBeInTheDocument();
-    const disputeBlock = (await screen.findByRole("heading", { name: "Dispute reason" })).closest("section")!;
+    const disputeBlock = (await screen.findByRole("heading", { name: "Approved dispute" })).closest("section")!;
     expect(within(disputeBlock).getByText("UPSTREAM: maintainers say not affected")).toBeInTheDocument();
     expect(screen.getByText("Fixed in v3.13.15")).toBeInTheDocument();
     const commentCall = calls.find((c) => c.url.pathname === "/api/triage/comments");
@@ -288,5 +303,85 @@ describe("Fixed version column (azurelinux-test release, never the upstream vers
     vi.stubGlobal("fetch", stubFetch({ "/stats": STATS, "/findings": { items: [], total: 0 } }).fn);
     renderWith(guestContext, <CvesPage />);
     expect(await screen.findByLabelText(/fixed version \(azure linux\)/i)).toBeInTheDocument();
+  });
+});
+
+describe("Actions by role", () => {
+  const routes = { "/cves/CVE-2026-1000": DETAIL, "/triage/comments": COMMENTS };
+  const states = async (ctx: AppContextValue) => {
+    vi.stubGlobal("fetch", stubFetch(routes).fn);
+    const user = userEvent.setup();
+    renderWith(ctx, <CveDetailPage id="CVE-2026-1000" />);
+    await screen.findByRole("heading", { level: 1 });
+    await user.click(screen.getAllByRole("button", { name: /^actions for/i })[0]!);
+    return Object.fromEntries(screen.getAllByRole("menuitem").map((i) => [i.textContent!.trim(), !(i as HTMLButtonElement).disabled]));
+  };
+
+  it("lets a developer set a PR, dispute and comment, but not assign or set a patch verdict", async () => {
+    expect(await states(developerContext)).toEqual({
+      "Set GitHub PR": true, Dispute: true, "Add comment": true, "Patch verdict": false, "Assign reviewer": false,
+    });
+    expect(screen.getByText(/administrator-only/i)).toBeInTheDocument();
+  });
+  it("lets the administrator use every action", async () => {
+    expect(Object.values(await states(adminContext)).every(Boolean)).toBe(true);
+  });
+  it("lets nobody act as a guest", async () => {
+    expect(Object.values(await states(guestContext)).some(Boolean)).toBe(false);
+  });
+  it("tells a developer a dispute goes to the administrator for approval", async () => {
+    vi.stubGlobal("fetch", stubFetch(routes).fn);
+    const user = userEvent.setup();
+    renderWith(developerContext, <CveDetailPage id="CVE-2026-1000" />);
+    await screen.findByRole("heading", { level: 1 });
+    await user.click(screen.getAllByRole("button", { name: /^actions for/i })[0]!);
+    await user.click(screen.getByRole("menuitem", { name: /dispute/i }));
+    expect(screen.getByText(/reviews disputes in the disputes section/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /raise dispute/i })).toBeDisabled(); // needs details first
+  });
+});
+
+describe("Disputes page", () => {
+  const pending = { id: 7, cve_id: "CVE-2026-1000", branch: "3.0", spec_path: "SPECS/x/x.spec", package_name: "rabbitmq-server", package_version: "3.13.7-1", reason: "UPSTREAM: not affected", status: "pending", requested_by: "dev@example.org", requested_at: "2026-11-04T08:00:00Z" };
+  const list = (items: unknown[]) => ({ items, total: items.length, counts: { pending: 1, approved: 0, rejected: 0 } });
+
+  it("lists pending requests with Approve and Reject for the administrator", async () => {
+    const { fn, calls } = stubFetch({ "/disputes": list([pending]), "/disputes/7/approve": { dispute: { ...pending, status: "approved" } } });
+    vi.stubGlobal("fetch", fn);
+    const user = userEvent.setup();
+    renderWith(adminContext, <DisputesPage />);
+    expect(await screen.findByText("rabbitmq-server")).toBeInTheDocument();
+    expect(screen.getByText("UPSTREAM: not affected")).toBeInTheDocument();
+    expect(calls[0]!.url.searchParams.get("status")).toBe("pending");
+    await user.click(screen.getByRole("button", { name: /approve dispute for rabbitmq-server/i }));
+    expect(calls.some((c) => c.url.pathname.endsWith("/disputes/7/approve") && c.init?.method === "POST")).toBe(true);
+  });
+  it("rejects with an optional note", async () => {
+    const { fn, calls } = stubFetch({ "/disputes": list([pending]), "/disputes/7/reject": {} });
+    vi.stubGlobal("fetch", fn);
+    const user = userEvent.setup();
+    renderWith(adminContext, <DisputesPage />);
+    await user.click(await screen.findByRole("button", { name: /reject dispute for rabbitmq-server/i }));
+    await user.type(screen.getByLabelText(/note for the requester/i), "Needs evidence");
+    await user.click(screen.getByRole("button", { name: "Reject dispute" }));
+    const call = calls.find((c) => c.url.pathname.endsWith("/disputes/7/reject"))!;
+    expect(JSON.parse(String(call.init?.body))).toEqual({ note: "Needs evidence" });
+  });
+  it("shows requests read-only to developers and guests, with no decision buttons", async () => {
+    vi.stubGlobal("fetch", stubFetch({ "/disputes": list([pending]) }).fn);
+    renderWith(developerContext, <DisputesPage />);
+    expect(await screen.findByText("rabbitmq-server")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /approve dispute/i })).toBeNull();
+    expect(screen.queryByRole("columnheader", { name: "Review" })).toBeNull();
+  });
+  it("switches tabs and shows an empty state", async () => {
+    const { fn, calls } = stubFetch({ "/disputes": (url: URL) => (url.searchParams.get("status") === "approved" ? list([]) : list([pending])) });
+    vi.stubGlobal("fetch", fn);
+    const user = userEvent.setup();
+    renderWith(adminContext, <DisputesPage />);
+    await screen.findByText("rabbitmq-server");
+    await user.click(screen.getByRole("tab", { name: /approved/i }));
+    expect(await screen.findByText(/no disputes here/i)).toBeInTheDocument();
+    expect(calls.at(-1)!.url.searchParams.get("status")).toBe("approved");
   });
 });

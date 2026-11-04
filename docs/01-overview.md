@@ -21,7 +21,8 @@ A simple scanner says "package X is older than the upstream fix, so it is vulner
 | Role | How they sign in | What they can do |
 |------|------------------|------------------|
 | Guest (viewer) | Nobody, just open the site | Read everything |
-| Admin | Google sign-in, only the allow-listed email | Comment, dispute, triage, set patch verdict, set PR link, run a scan |
+| Developer | Google sign-in, emails listed in `VULNEX_DEVELOPER_EMAILS` | Set the GitHub PR, add comments, raise disputes |
+| Admin | Google sign-in, only the allow-listed email | Everything a developer can, plus approve or reject disputes, assign, set patch verdict, run a scan |
 | Automation | A static key sent in a header | Only set the pull request link |
 
 ## Words you will see
@@ -40,6 +41,7 @@ A simple scanner says "package X is older than the upstream fix, so it is vulner
 | **Patch available** | An **upstream** patch exists for the CVE. It says nothing about the spec file |
 | **Fixed version** | The azurelinux-test version-release in which the CVE was patched. Blank while unpatched |
 | **Upstream fixed version** | The version the original project fixed it in. Shown only in the Deep view |
+| **Dispute** | A request to say "this finding is wrong". A developer raises it from Actions; the admin approves or rejects it on the Disputes page. Approval marks the package **Disputed** |
 | **Deep** | A pop-up with the source files the CVE touches and the backport patches |
 | **Snapshot** | The scan result saved as `data/vulnex.db` and refreshed daily |
 

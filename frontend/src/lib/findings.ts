@@ -4,7 +4,8 @@ import type { Finding, FindingComment } from "../api/types";
 export const findingKey = (f: Pick<Finding, "cve_id" | "branch" | "spec_path">): string =>
   [f.cve_id, f.branch, f.spec_path].join("::");
 
-export const triageStatusOf = (f: Finding): string => f.triage?.triage_status || "open";
+export const triageStatusOf = (f: Finding): string =>
+  f.dispute?.status === "pending" ? "pending_dispute" : f.triage?.triage_status || "open";
 export const resolutionOf = (f: Finding): string => f.triage?.resolution_status || f.status || "";
 export const ownerOf = (f: Finding): string => f.assignment?.assignee_email || f.triage?.owner || "";
 

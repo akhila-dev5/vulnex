@@ -4,17 +4,20 @@ The frontend is a **React 18 + TypeScript** single-page app built with **Vite 6*
 
 ## Pages
 
-There are three pages, chosen by the part of the URL after `#`.
+There are four pages, chosen by the part of the URL after `#`.
 
 | URL | Page | Shows |
 |-----|------|-------|
 | `#/` | CVEs (`CvesPage.tsx`) | Filter sidebar, four summary cards, findings grouped by CVE |
 | `#/packages` | Packages (`PackagesPage.tsx`) | Every scanned package and its version |
+| `#/disputes` | Disputes (`DisputesPage.tsx`) | Every dispute request in Pending / Approved / Rejected tabs; the admin approves or rejects here |
 | `#/cve/<id>` | CVE detail (`CveDetailPage.tsx`) | The CVE, severity box, tracker links, and a table of every affected package |
 
 ![CVE detail page](images/cve-detail.png)
 
-Each row on the CVE detail page has a **Deep** button, an **Actions** menu (comment, dispute, GitHub PR, patch verdict) and an arrow to open that package's panel.
+Each row on the CVE detail page has a **Deep** button, an **Actions** menu and an arrow to open that package's panel. In the menu, **Set GitHub PR**, **Dispute** and **Add comment** work for developers and the admin; **Patch verdict** and **Assign reviewer** are admin-only (`canUseAction` in `lib/triage.ts`).
+
+A dispute goes: developer raises it → it appears under **Disputes** as Pending (the package shows "Pending dispute") → the admin approves → the package's resolution status becomes **Disputed** and the reason shows under the package ("Approved dispute"). A rejected dispute changes nothing on the package.
 
 ## Folder map
 
@@ -22,7 +25,7 @@ Each row on the CVE detail page has a **Deep** button, an **Actions** menu (comm
 frontend/src/
   main.tsx, App.tsx        Entry point and the page switch
   app-context.ts           Shares sign-in state and the toast function
-  pages/                   The three pages (+ pages.test.tsx)
+  pages/                   The four pages (+ pages.test.tsx)
   components/              TopNav, FilterSidebar, DeepModal, TriageModal, ActionsMenu,
                            FindingPanel, Pagination, StatusPill, Toast, ...
   hooks/                   useHashRoute, useSession, useScan
