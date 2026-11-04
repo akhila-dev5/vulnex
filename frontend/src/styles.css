@@ -160,7 +160,7 @@ td small { display: block; color: #8590a3; font-size: 11px; margin-top: 3px; }
 .cve-table { min-width: 1120px; }
 .cve-table tr.row-open > td { background: #fafcff; }
 .actions-menu { position: relative; display: inline-block; }
-.action-popover { position: absolute; top: calc(100% + 6px); right: 0; z-index: 30; min-width: 190px; padding: 5px; border: 1px solid #dce3ec; border-radius: 9px; background: #fff; box-shadow: 0 12px 32px #13233824; display: grid; gap: 3px; }
+.action-popover { position: fixed; z-index: 1000; max-height: calc(100vh - 16px); overflow-y: auto; min-width: 190px; padding: 5px; border: 1px solid #dce3ec; border-radius: 9px; background: #fff; box-shadow: 0 12px 32px #13233824; display: grid; gap: 3px; }
 .action-popover button { display: flex; align-items: center; gap: 8px; width: 100%; border: 0; border-radius: 6px; padding: 9px 10px; background: transparent; color: #35445a; text-align: left; font-size: 12px; }
 .action-popover button:hover:not(:disabled) { background: #eef3ff; color: var(--blue); }
 .menu-note { margin: 2px 6px 6px; color: var(--muted); font-size: 11px; line-height: 1.4; }

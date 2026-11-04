@@ -159,6 +159,21 @@ describe("CVE page", () => {
     expect(screen.getByText(/sign in as the administrator/i)).toBeInTheDocument();
   });
 
+  it("draws the Actions menu outside the table so the table's scroll box cannot clip it", async () => {
+    vi.stubGlobal("fetch", stubFetch(routes()).fn);
+    const user = userEvent.setup();
+    renderWith(guestContext, <CveDetailPage id="CVE-2026-1000" />);
+    await screen.findByRole("heading", { level: 1 });
+    await user.click(screen.getAllByRole("button", { name: /^actions for/i })[0]!);
+    const menu = screen.getByRole("menu");
+    // Inside the table it sits under `.table-scroll { overflow-x: auto }` and
+    // `.table-card { overflow: hidden }`, which cut it off.
+    expect(menu.closest(".table-card, .table-scroll, table")).toBeNull();
+    expect(menu.parentElement).toBe(document.body);
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
+
   it("expands to the GitHub PR, patch availability, triage info, dispute reason and comments", async () => {
     const { fn, calls } = stubFetch(routes());
     vi.stubGlobal("fetch", fn);
