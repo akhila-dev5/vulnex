@@ -8,7 +8,7 @@ Everything runs on free tiers.
 | **Render** | The FastAPI service | `render.yaml` |
 | **Supabase** | PostgreSQL | none (connection string only) |
 | **GitHub Actions** | CI and the daily scan | `.github/workflows/ci.yml`, `scan.yml` |
-| **GitHub Pages** | Read-only static copy | built by `scan.yml` |
+| **GitHub Pages** | Optional read-only static copy | built by `scan.yml` only if the `ENABLE_PAGES` variable is `true` |
 
 ## Netlify (frontend)
 
@@ -56,7 +56,7 @@ On first start the app creates the tables (Alembic) and seeds them from `data/vu
 ## GitHub Actions
 
 - **`ci.yml`**: on pull requests and pushes to `main`. Backend tests on SQLite and PostgreSQL 16, then the frontend type check, tests and build.
-- **`scan.yml`**: daily at 06:17 UTC and on demand. Runs backend tests, scans, syncs to Postgres (if the secret exists), prints stats, builds the static export, commits the new snapshot with `[skip ci]` so it does not loop, and deploys GitHub Pages.
+- **`scan.yml`**: daily at 06:17 UTC and on demand. Runs backend tests, scans, syncs to Postgres (if the secret exists), prints stats, commits the new snapshot with `[skip ci]` so it does not loop. The static export and GitHub Pages deploy run only when the repository variable `ENABLE_PAGES` is `true` (and Pages is set to "GitHub Actions" in the repo settings).
 
 Secrets used (all optional): `DATABASE_URL`, `NVD_API_KEY`, and `VULNEX_VULNDATA_TOKEN` (a token with write access to `VulnerabilityData`, so the scan can publish the fixed-CVE list there as a pull request). `GITHUB_TOKEN` is provided automatically.
 

@@ -107,7 +107,12 @@ jobs:
         working-directory: backend
         run: python -m vulnex.cli stats
 
+      # The static GitHub Pages copy is optional (the live site is Netlify + Render).
+      # It only runs when the repository variable ENABLE_PAGES is "true" AND Pages is set
+      # to "GitHub Actions" in the repo settings; otherwise these steps are skipped and
+      # the scan still finishes green.
       - name: Build static dashboard
+        if: vars.ENABLE_PAGES == 'true'
         working-directory: backend
         run: python -m vulnex.cli export --out ../site
 
@@ -124,13 +129,16 @@ jobs:
           fi
 
       - uses: actions/configure-pages@v5
+        if: vars.ENABLE_PAGES == 'true'
       - uses: actions/upload-pages-artifact@v3
+        if: vars.ENABLE_PAGES == 'true'
         with:
           path: site
 
   deploy:
     name: Deploy dashboard
     needs: scan
+    if: vars.ENABLE_PAGES == 'true'
     runs-on: ubuntu-latest
     environment:
       name: github-pages
