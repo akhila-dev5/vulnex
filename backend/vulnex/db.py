@@ -587,6 +587,20 @@ def get_package(
     return pkg
 
 
+# "100% patched": the spec applies the CVE's patch file AND its %changelog names the
+# fix. Such findings need no further analysis once the fix is recorded elsewhere.
+CONFIRMED_PATCHED_SQL = (
+    "status = 'patched' AND fix_source = 'patch' "
+    "AND fixed_in_basis = 'changelog' AND patch_status = 'applied'"
+)
+
+# Open work first: exposed packages, then ones needing a human look, then the rest.
+_STATUS_RANK = (
+    "CASE {p}status WHEN 'affected' THEN 0 WHEN 'unconfirmed' THEN 1 "
+    "WHEN 'patched' THEN 2 WHEN 'false_positive' THEN 3 ELSE 4 END"
+)
+
+
 def list_findings(
     conn: sqlite3.Connection,
     status: str = "",
@@ -653,15 +667,25 @@ def list_findings(
     total = conn.execute(
         f"SELECT COUNT(*) c FROM findings f{join}{where}", tuple(params)
     ).fetchone()["c"]
-    order = (
+    rank = _STATUS_RANK.format(p="f.")
+    sev = (
         "CASE f.severity WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 "
-        "WHEN 'low' THEN 3 WHEN 'none' THEN 4 ELSE 5 END, f.confidence DESC, f.cve_id"
+        "WHEN 'low' THEN 3 WHEN 'none' THEN 4 ELSE 5 END"
     )
+    # A CVE sorts by its most urgent package, so a CVE that is still affected anywhere
+    # leads the list. All rows of one CVE stay together (cve_id comes before any
+    # per-row column) with affected packages first inside it.
+    order = f"cve_rank, cve_sev, f.cve_id, {rank}, f.confidence DESC, f.package_name"
     rows = _rows(
         conn,
-        f"SELECT f.* FROM findings f{join}{where} ORDER BY {order} LIMIT ? OFFSET ?",
+        f"SELECT f.*, MIN({rank}) OVER (PARTITION BY f.cve_id) AS cve_rank, "
+        f"MIN({sev}) OVER (PARTITION BY f.cve_id) AS cve_sev "
+        f"FROM findings f{join}{where} ORDER BY {order} LIMIT ? OFFSET ?",
         [*params, limit, offset],
     )
+    for f in rows:
+        f.pop("cve_rank", None)
+        f.pop("cve_sev", None)
     for f in rows:
         _hydrate_finding(f)
     return rows, total
@@ -707,7 +731,8 @@ def findings_for_cve(conn: sqlite3.Connection, cve_id: str) -> list[dict]:
     return [
         _hydrate_finding(dict(r))
         for r in conn.execute(
-            "SELECT * FROM findings WHERE cve_id = ? ORDER BY package_name", (cve_id,)
+            f"SELECT * FROM findings WHERE cve_id = ? ORDER BY {_STATUS_RANK.format(p='')}, "
+            "package_name, package_version", (cve_id,)
         ).fetchall()
     ]
 
