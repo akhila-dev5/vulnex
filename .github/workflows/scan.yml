@@ -125,7 +125,16 @@ jobs:
             echo "Snapshot unchanged; nothing to commit."
           else
             git commit -m "chore: refresh CVE snapshot ($(date -u +%Y-%m-%d)) [skip ci]"
-            git push
+            # The branch can move while a scan runs (a merge, another snapshot). Replay
+            # this snapshot on top of the latest commit and retry, instead of failing
+            # with "failed to push some refs". The scan's database wins any conflict.
+            for attempt in 1 2 3 4; do
+              if git push; then break; fi
+              if [ "$attempt" = 4 ]; then echo "push failed after 4 attempts"; exit 1; fi
+              git fetch origin "${GITHUB_REF_NAME}"
+              git rebase -X theirs "origin/${GITHUB_REF_NAME}"
+              sleep $((attempt * 3))
+            done
           fi
 
       - uses: actions/configure-pages@v5
