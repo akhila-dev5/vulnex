@@ -199,11 +199,16 @@ manager = ScanManager()
 ROLE_VIEWER = config.ROLE_VIEWER
 ROLE_ADMIN = config.ROLE_ADMIN
 ROLE_AUTOMATION = config.ROLE_AUTOMATION
+ROLE_DEVELOPER = config.ROLE_DEVELOPER
 
 _CAPABILITIES = {
     ROLE_ADMIN: {
         "triage", "dispute", "comment", "scan", "assign", "patch_verdict", "set_pr",
+        "approve_dispute",
     },
+    # Developers: set a GitHub PR, comment and raise disputes. Approving a dispute,
+    # assigning and setting a patch verdict stay with the administrator.
+    ROLE_DEVELOPER: {"comment", "dispute", "set_pr"},
     ROLE_AUTOMATION: {"set_pr"},
     ROLE_VIEWER: set(),
 }
@@ -223,8 +228,9 @@ def resolve_role(request: Request) -> str:
     credential = _presented_credential(request)
     if not credential:
         return ROLE_VIEWER
-    if auth.sessions.get(credential):
-        return ROLE_ADMIN
+    session = auth.sessions.get(credential)
+    if session:
+        return session.get("role") or ROLE_ADMIN
     return config.role_for_key(credential)
 
 
@@ -238,6 +244,8 @@ def capabilities(role: str) -> dict:
         "can_scan": "scan" in granted,
         "can_set_patch_verdict": "patch_verdict" in granted,
         "can_set_pr": "set_pr" in granted,
+        "can_assign": "assign" in granted,
+        "can_approve_dispute": "approve_dispute" in granted,
     }
 
 
@@ -253,17 +261,35 @@ def require_admin(request: Request) -> str:
     return role
 
 
+def require_capability(request: Request, capability: str, what: str) -> str:
+    """Raise 401 unless the caller's role grants ``capability``; returns the role."""
+    role = resolve_role(request)
+    if capability not in _CAPABILITIES.get(role, set()):
+        raise HTTPException(
+            status_code=401,
+            detail=f"Sign in with Google to {what}. Read-only visitors cannot do this.",
+        )
+    return role
+
+
+def actor_identity(request: Request, role: str) -> str:
+    """Who to record as the author of a change: the signed-in email, else the role's name."""
+    session = auth.sessions.get(_presented_credential(request))
+    email = ((session or {}).get("identity") or {}).get("email")
+    return email or config.identity_for(role).get("identity") or role
+
+
 def require_pr_setter(request: Request) -> str:
     """Raise 401 unless the caller may set the GitHub CVE PR.
 
-    Only the admin and the narrowly-scoped ``automation`` identity qualify; a
-    viewer and any other caller are refused.
+    The admin, developers and the narrowly-scoped ``automation`` identity qualify;
+    a viewer and any other caller are refused.
     """
     role = resolve_role(request)
     if "set_pr" not in _CAPABILITIES.get(role, set()):
         raise HTTPException(
             status_code=401,
-            detail="Setting the GitHub CVE PR needs the automation identity or admin.",
+            detail="Setting the GitHub CVE PR needs a developer or admin sign-in.",
         )
     return role
 
@@ -362,7 +388,10 @@ def get_role(request: Request) -> dict:
     session = auth.sessions.get(_presented_credential(request))
     return {
         "role": role,
-        "identity": config.identity_for(role),
+        "identity": (
+            {**config.identity_for(role), "identity": actor_identity(request, role),
+             "email": (session or {}).get("identity", {}).get("email", config.identity_for(role).get("email", ""))}
+        ),
         "methods": {
             "google": config.google_login_configured(),
             "google_email": config.ADMIN_EMAIL_ALLOWLIST,
@@ -403,10 +432,14 @@ def auth_google_callback(request: Request, code: str = "", state: str = "") -> R
     user = auth.google_exchange(code, _callback_url(request))
     email = (user or {}).get("email")
     verified = (user or {}).get("email_verified") is True
-    if not auth.google_login_allowed(email, verified):
-        raise HTTPException(status_code=403, detail="This verified Google account is not the configured administrator.")
-    identity = {**config.identity_for(ROLE_ADMIN), "identity": email, "email": email}
-    token, _ = auth.sessions.create(identity, method="google")
+    role = auth.google_role_for(email, verified)
+    if role is None:
+        raise HTTPException(
+            status_code=403,
+            detail="This Google account is not allowed to sign in. Ask the administrator to add it.",
+        )
+    identity = {**config.identity_for(role), "identity": email, "email": email}
+    token, _ = auth.sessions.create(identity, method="google", role=role)
     return RedirectResponse(f"/#vulnex_token={token}")
 
 
@@ -438,11 +471,15 @@ def _decorate_findings(
         for item in db.list_assignments(conn)
     }
     records = db.triage_index(conn)  # one query, not one per finding
+    disputes = db.dispute_index(conn)
     for finding in findings:
         finding["triage"] = records.get(
             (finding["cve_id"], finding.get("branch") or "", finding.get("spec_path") or "")
         )
         finding["assignment"] = assignments.get((finding.get("cve_id"), finding.get("package_name")))
+        finding["dispute"] = disputes.get(
+            (finding["cve_id"], finding.get("branch") or "", finding.get("spec_path") or "")
+        )
         # List rows stay light: tracker links and the Deep view are fetched when a
         # CVE or Deep inspection is opened, not shipped for every row.
         triage.decorate_finding(
@@ -591,7 +628,11 @@ def get_cve(cve_id: str, enrich: bool = True) -> dict:
             enrichment = None
 
     with db.session() as conn:
+        disputes = db.dispute_index(conn)
         for finding in findings:
+            finding["dispute"] = disputes.get(
+                (finding["cve_id"], finding.get("branch") or "", finding.get("spec_path") or "")
+            )
             finding["triage"] = db.get_triage(
                 conn, finding["cve_id"], finding.get("branch", ""),
                 finding.get("spec_path", ""),
@@ -727,14 +768,14 @@ def get_triage_comments(
 
 @app.post("/api/triage/comment")
 def add_triage_comment(payload: CommentRequest, request: Request) -> dict:
-    """Admin-only triage comment on a specific finding."""
-    role = require_admin(request)
+    """Triage comment on a specific finding (administrator or developer)."""
+    role = require_capability(request, "comment", "comment on a finding")
     body = (payload.body or "").strip()
     if not body:
         raise HTTPException(status_code=400, detail="Comment body is required")
     if not payload.cve_id:
         raise HTTPException(status_code=400, detail="cve_id is required")
-    author = (payload.author or config.ADMIN_IDENTITY).strip()
+    author = actor_identity(request, role)
     with db.session() as conn:
         comment = db.add_finding_comment(
             conn, payload.cve_id.upper(), payload.branch, payload.spec_path, body, author
@@ -742,10 +783,24 @@ def add_triage_comment(payload: CommentRequest, request: Request) -> dict:
     return {"comment": comment, "role": role}
 
 
+def _apply_approved_dispute(conn, dispute: dict) -> dict:
+    """What approval does: the reason joins the package's history and it is marked Disputed."""
+    comment = db.add_finding_comment(
+        conn, dispute["cve_id"], dispute["branch"], dispute["spec_path"],
+        dispute["reason"], dispute.get("requested_by") or "developer", kind="dispute",
+    )
+    record = db.upsert_triage(
+        conn, dispute["cve_id"], dispute["branch"], dispute["spec_path"],
+        triage_status="disputed", resolution_status="disputed",
+        package_name=dispute.get("package_name") or "",
+    )
+    return {"comment": comment, "triage": record}
+
+
 @app.post("/api/triage/dispute")
 def raise_dispute(payload: DisputeRequest, request: Request) -> dict:
-    """Admin-only dispute. The reason lands under the triage comments."""
-    require_admin(request)
+    """Raise a dispute. A developer's request waits for admin approval; the admin's own is approved."""
+    role = require_capability(request, "dispute", "raise a dispute")
     reason = (payload.reason or "").strip()
     if not reason:
         raise HTTPException(status_code=400, detail="A dispute needs a reason")
@@ -760,16 +815,70 @@ def raise_dispute(payload: DisputeRequest, request: Request) -> dict:
             raise HTTPException(status_code=400, detail="First unaffected version contains unsupported characters")
         reason += f"\nFirst unaffected version: {version}"
     cve_id = payload.cve_id.upper()
+    requester = actor_identity(request, role)
     with db.session() as conn:
-        comment = db.add_finding_comment(
-            conn, cve_id, payload.branch, payload.spec_path, reason,
-            config.ADMIN_IDENTITY, kind="dispute",
+        finding = db.get_finding_at(conn, cve_id, payload.branch, payload.spec_path)
+        if not finding:
+            raise HTTPException(status_code=404, detail="Finding not found")
+        if db.pending_dispute(conn, cve_id, payload.branch, payload.spec_path):
+            raise HTTPException(status_code=409, detail="A dispute for this package is already waiting for approval.")
+        auto = "approve_dispute" in _CAPABILITIES.get(role, set())
+        dispute = db.create_dispute(
+            conn, finding, reason, requester,
+            first_unaffected_version="" if payload.never_applicable else version,
+            never_applicable=payload.never_applicable,
+            status="approved" if auto else "pending",
         )
-        record = db.upsert_triage(
-            conn, cve_id, payload.branch, payload.spec_path,
-            triage_status="disputed", resolution_status="in_progress",
+        applied = _apply_approved_dispute(conn, dispute) if auto else {}
+    return {"dispute": dispute, "approved": auto, **applied}
+
+
+@app.get("/api/disputes")
+def get_disputes(
+    status: str = "",
+    search: str = "",
+    page: int = 1,
+    limit: int = Query(50, ge=1, le=200),
+) -> dict:
+    """Dispute requests, newest first, with how many are in each state."""
+    if status and status not in db.DISPUTE_STATUSES:
+        raise HTTPException(status_code=400, detail="status must be pending, approved or rejected")
+    with db.session() as conn:
+        rows, total = db.list_disputes(
+            conn, status=status, search=search.strip(),
+            limit=limit, offset=(max(page, 1) - 1) * limit,
         )
-    return {"comment": comment, "triage": record}
+        counts = db.dispute_counts(conn)
+    return {"items": rows, "total": total, "page": page, "limit": limit, "counts": counts}
+
+
+class DisputeDecision(BaseModel):
+    note: str = ""
+
+
+def _decide_dispute(dispute_id: int, status: str, payload: DisputeDecision, request: Request) -> dict:
+    role = require_capability(request, "approve_dispute", "approve or reject disputes")
+    decider = actor_identity(request, role)
+    with db.session() as conn:
+        if not db.get_dispute(conn, dispute_id):
+            raise HTTPException(status_code=404, detail="Dispute not found")
+        dispute = db.decide_dispute(conn, dispute_id, status, decider, (payload.note or "").strip())
+        if dispute is None:
+            raise HTTPException(status_code=409, detail="This dispute has already been decided.")
+        applied = _apply_approved_dispute(conn, dispute) if status == "approved" else {}
+    return {"dispute": dispute, **applied}
+
+
+@app.post("/api/disputes/{dispute_id}/approve")
+def approve_dispute(dispute_id: int, request: Request, payload: DisputeDecision | None = None) -> dict:
+    """Admin approval: the package is marked Disputed and the reason joins its history."""
+    return _decide_dispute(dispute_id, "approved", payload or DisputeDecision(), request)
+
+
+@app.post("/api/disputes/{dispute_id}/reject")
+def reject_dispute(dispute_id: int, request: Request, payload: DisputeDecision | None = None) -> dict:
+    """Admin rejection: nothing changes on the package; the note tells the requester why."""
+    return _decide_dispute(dispute_id, "rejected", payload or DisputeDecision(), request)
 
 
 @app.post("/api/triage/google-pr")
@@ -789,7 +898,9 @@ def set_github_pr(payload: GithubPRRequest, request: Request) -> dict:
     import re
     if not re.fullmatch(r"https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/pull/" + re.escape(number) + r"/?", url):
         raise HTTPException(status_code=400, detail="Use a GitHub pull request URL whose number matches the PR number field")
-    identity = config.identity_for(role).get("identity") or role
+    identity = actor_identity(request, role)
+    # A developer who sets the PR owns the follow-up; the automation identity keeps the admin as owner.
+    owner = identity if role == ROLE_DEVELOPER else (config.ADMIN_EMAIL or config.ADMIN_IDENTITY)
     with db.session() as conn:
         record = db.upsert_triage(
             conn,
@@ -801,7 +912,7 @@ def set_github_pr(payload: GithubPRRequest, request: Request) -> dict:
             github_pr_set_by=identity,
             github_pr_set_at=db.utcnow(),
             resolution_status="in_progress",
-            owner=config.ADMIN_EMAIL or config.ADMIN_IDENTITY,
+            owner=owner,
         )
     if request.url.path.endswith("/google-pr"):
         # Backward-compatible response names for the original automation client.

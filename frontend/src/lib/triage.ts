@@ -41,9 +41,19 @@ export const ACTION_TITLE: Record<TriageAction, string> = {
   pr: "Set GitHub pull request",
 };
 
+/** Assigning and setting a patch verdict stay with the administrator; the rest is open to developers too. */
+export const ADMIN_ONLY_ACTIONS: readonly TriageAction[] = ["assign", "patch"];
+
+export function canUseAction(
+  action: TriageAction,
+  who: { canAdmin: boolean; canContribute: boolean },
+): boolean {
+  return ADMIN_ONLY_ACTIONS.includes(action) ? who.canAdmin : who.canContribute;
+}
+
 export const ACTION_DONE: Record<TriageAction, string> = {
   assign: "CVE assigned",
-  dispute: "Dispute recorded",
+  dispute: "Dispute sent to the administrator for approval",
   comment: "Comment saved",
   patch: "Patch verdict updated",
   pr: "GitHub PR recorded",

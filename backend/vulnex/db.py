@@ -169,6 +169,27 @@ CREATE TABLE IF NOT EXISTS finding_comments (
     created_at TEXT
 );
 
+-- Dispute requests. A developer raises one (pending); the administrator approves or
+-- rejects it. Approving marks the finding's resolution status as disputed.
+CREATE TABLE IF NOT EXISTS disputes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    cve_id TEXT NOT NULL,
+    branch TEXT NOT NULL DEFAULT '',
+    spec_path TEXT NOT NULL DEFAULT '',
+    package_name TEXT,
+    package_version TEXT,
+    severity TEXT,
+    reason TEXT NOT NULL,
+    first_unaffected_version TEXT DEFAULT '',
+    never_applicable INTEGER DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'pending',
+    requested_by TEXT,
+    requested_at TEXT,
+    decided_by TEXT DEFAULT '',
+    decided_at TEXT,
+    decision_note TEXT DEFAULT ''
+);
+
 CREATE TABLE IF NOT EXISTS cve_cache (
     cve_id TEXT PRIMARY KEY,
     payload TEXT,
@@ -185,6 +206,8 @@ CREATE INDEX IF NOT EXISTS idx_findings_spec ON findings(branch, spec_path);
 CREATE INDEX IF NOT EXISTS idx_comments_assignment ON assignment_comments(assignment_id);
 CREATE INDEX IF NOT EXISTS idx_triage_key ON finding_triage(cve_id, branch, spec_path);
 CREATE INDEX IF NOT EXISTS idx_finding_comments_key ON finding_comments(cve_id, branch, spec_path);
+CREATE INDEX IF NOT EXISTS idx_disputes_status ON disputes(status);
+CREATE INDEX IF NOT EXISTS idx_disputes_key ON disputes(cve_id, branch, spec_path);
 """
 
 
@@ -700,6 +723,18 @@ def _hydrate_finding(f: dict) -> dict:
     return f
 
 
+def get_finding_at(
+    conn: sqlite3.Connection, cve_id: str, branch: str = "", spec_path: str = ""
+) -> dict | None:
+    """The finding at an exact CVE + branch + spec path (as stored on triage records)."""
+    row = conn.execute(
+        "SELECT * FROM findings WHERE cve_id = ? AND COALESCE(branch, '') = ? "
+        "AND COALESCE(spec_path, '') = ? ORDER BY id DESC LIMIT 1",
+        (cve_id, branch or "", spec_path or ""),
+    ).fetchone()
+    return dict(row) if row else None
+
+
 def get_finding(
     conn: sqlite3.Connection,
     cve_id: str,
@@ -968,6 +1003,109 @@ def finding_comments(
         "ORDER BY id",
         (cve_id, branch or "", spec_path or ""),
     )
+
+
+# -- disputes ---------------------------------------------------------------
+DISPUTE_STATUSES = ("pending", "approved", "rejected")
+
+
+def create_dispute(
+    conn: sqlite3.Connection,
+    finding: dict,
+    reason: str,
+    requested_by: str,
+    first_unaffected_version: str = "",
+    never_applicable: bool = False,
+    status: str = "pending",
+) -> dict:
+    """Record a dispute request for one finding (its package details are copied in)."""
+    now = utcnow()
+    decided_by = requested_by if status != "pending" else ""
+    cursor = conn.execute(
+        "INSERT INTO disputes (cve_id, branch, spec_path, package_name, package_version, "
+        "severity, reason, first_unaffected_version, never_applicable, status, requested_by, "
+        "requested_at, decided_by, decided_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (
+            finding["cve_id"], finding.get("branch") or "", finding.get("spec_path") or "",
+            finding.get("package_name"), finding.get("package_version"), finding.get("severity"),
+            reason, first_unaffected_version or "", 1 if never_applicable else 0, status,
+            requested_by, now, decided_by, now if status != "pending" else None,
+        ),
+    )
+    conn.commit()
+    return get_dispute(conn, cursor.lastrowid) or {}
+
+
+def get_dispute(conn: sqlite3.Connection, dispute_id: int) -> dict | None:
+    row = conn.execute("SELECT * FROM disputes WHERE id = ?", (dispute_id,)).fetchone()
+    return dict(row) if row else None
+
+
+def pending_dispute(conn: sqlite3.Connection, cve_id: str, branch: str, spec_path: str) -> dict | None:
+    row = conn.execute(
+        "SELECT * FROM disputes WHERE cve_id = ? AND branch = ? AND spec_path = ? "
+        "AND status = 'pending' ORDER BY id DESC LIMIT 1",
+        (cve_id, branch or "", spec_path or ""),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def list_disputes(
+    conn: sqlite3.Connection,
+    status: str = "",
+    search: str = "",
+    limit: int = 50,
+    offset: int = 0,
+) -> tuple[list[dict], int]:
+    """Disputes, newest first; ``status`` is one of pending/approved/rejected (empty = all)."""
+    clauses, params = [], []
+    if status:
+        clauses.append("status = ?")
+        params.append(status)
+    if search:
+        clauses.append("(cve_id LIKE ? OR package_name LIKE ? OR requested_by LIKE ? OR reason LIKE ?)")
+        like = f"%{search}%"
+        params.extend([like, like, like, like])
+    where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
+    total = conn.execute(f"SELECT COUNT(*) c FROM disputes{where}", tuple(params)).fetchone()["c"]
+    rows = _rows(
+        conn,
+        f"SELECT * FROM disputes{where} ORDER BY id DESC LIMIT ? OFFSET ?",
+        [*params, limit, offset],
+    )
+    return rows, total
+
+
+def dispute_counts(conn: sqlite3.Connection) -> dict[str, int]:
+    counts = {s: 0 for s in DISPUTE_STATUSES}
+    for row in conn.execute("SELECT status, COUNT(*) c FROM disputes GROUP BY status").fetchall():
+        counts[row["status"]] = row["c"]
+    return counts
+
+
+def decide_dispute(
+    conn: sqlite3.Connection, dispute_id: int, status: str, decided_by: str, note: str = ""
+) -> dict | None:
+    """Approve or reject a *pending* dispute. Returns None when it is not pending."""
+    cursor = conn.execute(
+        "UPDATE disputes SET status = ?, decided_by = ?, decided_at = ?, decision_note = ? "
+        "WHERE id = ? AND status = 'pending'",
+        (status, decided_by, utcnow(), note, dispute_id),
+    )
+    conn.commit()
+    return get_dispute(conn, dispute_id) if cursor.rowcount else None
+
+
+def dispute_index(conn: sqlite3.Connection) -> dict[tuple[str, str, str], dict]:
+    """The newest dispute for every finding, in one query (id, status only)."""
+    index: dict[tuple[str, str, str], dict] = {}
+    for row in conn.execute(
+        "SELECT id, cve_id, branch, spec_path, status FROM disputes ORDER BY id"
+    ).fetchall():
+        index[(row["cve_id"], row["branch"] or "", row["spec_path"] or "")] = {
+            "id": row["id"], "status": row["status"],
+        }
+    return index
 
 
 def comments_by_finding(

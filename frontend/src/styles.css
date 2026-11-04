@@ -245,3 +245,18 @@ tr.expanded > td { background: #f9fbfe; padding: 18px; }
   .topnav-right { width: 100%; justify-content: space-between; margin-left: 0; }
   .page-head h1, .cve-head h1 { font-size: 22px; }
 }
+
+/* disputes page and nav badge */
+.nav-badge { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; margin-left: 7px; padding: 0 5px; border-radius: 999px; background: #f0a53a; color: #1b2a3f; font-size: 11px; font-weight: 700; line-height: 1; }
+.tabs { display: flex; gap: 4px; flex-wrap: wrap; }
+.tab { display: inline-flex; align-items: center; gap: 7px; border: 0; border-radius: 8px; padding: 7px 12px; background: transparent; color: #5f6c80; font-size: 13px; font-weight: 600; }
+.tab:hover { background: #eef3ff; color: var(--blue); }
+.tab.active { background: #e4ecff; color: var(--blue); }
+.tab-count { min-width: 20px; padding: 1px 6px; border-radius: 999px; background: #fff; color: #5f6c80; font-size: 11px; text-align: center; }
+.inline-search input { width: 240px; max-width: 100%; border: 1px solid #dce3ec; border-radius: 8px; padding: 8px 11px; font-size: 13px; }
+.disputes-table { min-width: 980px; }
+.disputes-table td { vertical-align: top; }
+.disputes-table small { display: block; color: #7b8799; font-size: 11px; margin-top: 2px; }
+.reason-cell { max-width: 340px; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12.5px; line-height: 1.5; }
+.review-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.modal-note { margin: 0; padding: 9px 11px; border-radius: 8px; background: #eef3ff; color: #3a4a66; font-size: 12.5px; line-height: 1.5; }

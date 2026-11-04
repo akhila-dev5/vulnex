@@ -32,7 +32,7 @@ export function FindingPanel({
   comments: CommentsState | undefined;
   onAddComment: () => void;
 }) {
-  const { canAdmin } = useApp();
+  const { canContribute } = useApp();
   const triage = finding.triage ?? {};
   const patch = finding.patch_availability ?? {};
   const items = comments?.status === "ready" ? comments.items : [];
@@ -148,7 +148,13 @@ export function FindingPanel({
       </section>
 
       <section className="panel-block" aria-labelledby={`${id}-dispute`}>
-        <h3 id={`${id}-dispute`}>Dispute reason</h3>
+        <h3 id={`${id}-dispute`}>Approved dispute</h3>
+        {finding.dispute?.status === "pending" && (
+          <p className="muted">A dispute for this package is waiting for the administrator's approval.</p>
+        )}
+        {finding.dispute?.status === "rejected" && !dispute && (
+          <p className="muted">The last dispute for this package was rejected by the administrator.</p>
+        )}
         {comments?.status === "loading" || !comments ? (
           <p className="muted"><RefreshCw size={12} className="spin" /> Loading…</p>
         ) : dispute ? (
@@ -159,7 +165,7 @@ export function FindingPanel({
             <p>{dispute.body}</p>
           </article>
         ) : (
-          <p className="muted">No dispute has been raised for this package.</p>
+          !finding.dispute && <p className="muted">No dispute has been raised for this package.</p>
         )}
       </section>
 
@@ -169,8 +175,8 @@ export function FindingPanel({
           <button
             className="btn secondary small"
             onClick={onAddComment}
-            disabled={!canAdmin}
-            title={canAdmin ? undefined : "Administrator sign-in required"}
+            disabled={!canContribute}
+            title={canContribute ? undefined : "Sign in with Google to comment"}
           >
             <MessageSquarePlus size={13} aria-hidden="true" /> Add comment
           </button>

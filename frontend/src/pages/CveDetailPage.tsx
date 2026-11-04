@@ -9,7 +9,7 @@ import { DeepModal } from "../components/DeepModal";
 import { FindingPanel, type CommentsState } from "../components/FindingPanel";
 import { PatchIcon } from "../components/PatchIcon";
 import { StatusPill } from "../components/StatusPill";
-import { TriageModal } from "../components/TriageModal";
+import { TriageModal, type SaveResult } from "../components/TriageModal";
 import { findingKey, ownerOf, resolutionOf, sortForCvePage, specUrl, triageStatusOf } from "../lib/findings";
 import { formatDate, severityLabel, severityTone, statusLabel, statusTone } from "../lib/labels";
 import { hrefFor } from "../lib/route";
@@ -85,9 +85,9 @@ export function CveDetailPage({ id }: { id: string }) {
     if (opening && !comments[key]) void loadComments(finding);
   };
 
-  const saved = (type: TriageAction, finding: Finding) => {
+  const saved = (type: TriageAction, finding: Finding, result: SaveResult) => {
     setActiveAction(null);
-    notify(ACTION_DONE[type]);
+    notify(type === "dispute" && result.approved ? "Dispute approved and package marked Disputed" : ACTION_DONE[type]);
     setTick((t) => t + 1);
     // Comments and disputes show in the dropdown, so refresh them for this package.
     if (expanded[findingKey(finding)] || comments[findingKey(finding)]) void loadComments(finding);

@@ -2,7 +2,7 @@ import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { AlertTriangle, ChevronDown, GitPullRequest, MessageSquarePlus, ShieldCheck, UserPlus, type LucideIcon } from "lucide-react";
 import { useApp } from "../app-context";
-import type { TriageAction } from "../lib/triage";
+import { ADMIN_ONLY_ACTIONS, canUseAction, type TriageAction } from "../lib/triage";
 
 const ITEMS: Array<{ action: TriageAction; label: string; Icon: LucideIcon }> = [
   { action: "pr", label: "Set GitHub PR", Icon: GitPullRequest },
@@ -16,14 +16,16 @@ const GAP = 6; // space between the button and the menu
 const EDGE = 8; // keep the menu this far from the window edge
 
 /**
- * Per-package triage actions. Everyone can open the menu; only the administrator can use the items.
+ * Per-package triage actions. Everyone can open the menu. GitHub PR, comment and dispute are open to
+ * developers and the administrator; assign and patch verdict are administrator-only.
  *
  * The menu is drawn in a portal on <body> with fixed positioning. Rendered inside the table it
  * would be clipped: the table sits in a scroll box (`overflow-x: auto`, which also makes the
  * vertical axis clip) inside a card with `overflow: hidden`.
  */
 export function ActionsMenu({ label, onAction }: { label: string; onAction: (action: TriageAction) => void }) {
-  const { canAdmin } = useApp();
+  const { canAdmin, canContribute } = useApp();
+  const who = { canAdmin, canContribute };
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -103,7 +105,8 @@ export function ActionsMenu({ label, onAction }: { label: string; onAction: (act
               <button
                 key={action}
                 role="menuitem"
-                disabled={!canAdmin}
+                disabled={!canUseAction(action, who)}
+                title={!canUseAction(action, who) && ADMIN_ONLY_ACTIONS.includes(action) ? "Administrator only" : undefined}
                 onClick={() => {
                   setOpen(false);
                   onAction(action);
@@ -112,7 +115,10 @@ export function ActionsMenu({ label, onAction }: { label: string; onAction: (act
                 <Icon size={14} aria-hidden="true" /> {itemLabel}
               </button>
             ))}
-            {!canAdmin && <p className="menu-note">Sign in as the administrator to use these actions.</p>}
+            {!canContribute && <p className="menu-note">Sign in with Google to use these actions.</p>}
+            {canContribute && !canAdmin && (
+              <p className="menu-note">Assign reviewer and Patch verdict are administrator-only.</p>
+            )}
           </div>,
           document.body,
         )}

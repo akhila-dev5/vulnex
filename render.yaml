@@ -30,6 +30,10 @@ services:
       # Supabase connection string (Session pooler). Secret: set it in the dashboard.
       - key: DATABASE_URL
         sync: false
+      # Developers who may sign in with Google (comma separated emails): GitHub PR, comments and
+      # disputes. Leave empty for admin-only sign-in.
+      - key: VULNEX_DEVELOPER_EMAILS
+        sync: false
       - key: GOOGLE_OAUTH_CLIENT_ID
         sync: false
       - key: GOOGLE_OAUTH_CLIENT_SECRET

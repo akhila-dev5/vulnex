@@ -53,10 +53,10 @@ class SessionStore:
     def ttl(self) -> int:
         return self._ttl if self._ttl is not None else config.SESSION_TTL
 
-    def create(self, identity: dict, method: str) -> tuple[str, dict]:
+    def create(self, identity: dict, method: str, role: str | None = None) -> tuple[str, dict]:
         token = secrets.token_urlsafe(32)
         payload = {
-            "role": config.ROLE_ADMIN,
+            "role": role or config.ROLE_ADMIN,
             "method": method,
             "identity": identity,
             "expires_at": time.time() + self.ttl,
@@ -169,5 +169,19 @@ def google_exchange(code: str, redirect_uri: str) -> dict | None:
 
 
 def google_login_allowed(email: str | None, verified: bool = False) -> bool:
-    """Only the configured, verified administrator email may sign in."""
+    """True only for the configured, verified administrator email."""
     return bool(verified and email) and email.strip().lower() == config.ADMIN_EMAIL_ALLOWLIST
+
+
+def google_role_for(email: str | None, verified: bool = False) -> str | None:
+    """The role a verified Google account signs in with, or ``None`` when it may not sign in.
+
+    The administrator is fixed in code. Developers come from ``VULNEX_DEVELOPER_EMAILS``.
+    """
+    if not (verified and email):
+        return None
+    if google_login_allowed(email, verified):
+        return config.ROLE_ADMIN
+    if email.strip().lower() in config.DEVELOPER_EMAILS:
+        return config.ROLE_DEVELOPER
+    return None

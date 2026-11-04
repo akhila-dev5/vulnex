@@ -28,6 +28,7 @@ Triage tables (typed by people, never overwritten by a scan):
 |-------|-------|
 | `finding_triage` | Per finding: triage status, resolution status, owner, final verdict, patch link, GitHub PR number and link |
 | `finding_comments` | Comments on a finding |
+| `disputes` | Dispute requests: package copied in, reason, status (`pending` / `approved` / `rejected`), who requested and who decided, decision note |
 | `assignments` | Findings handed to patch automation, with status and assignee |
 | `assignment_comments` | Comments on an assignment |
 | `cve_cache` | Cached enrichment for a CVE so it is fetched once |

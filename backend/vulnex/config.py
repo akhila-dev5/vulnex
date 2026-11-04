@@ -80,6 +80,7 @@ OPEN_STATUS = "affected"
 ROLE_VIEWER = "viewer"
 ROLE_ADMIN = "admin"
 ROLE_AUTOMATION = "automation"
+ROLE_DEVELOPER = "developer"
 
 # Admin identity shown in the UI and stored on triage records. The email is a
 # display/owner value only: the admin credential is GitHub, not a password.
@@ -89,6 +90,14 @@ ROLE_AUTOMATION = "automation"
 ADMIN_IDENTITY = "gurujuakhila.dev@gmail.com"
 ADMIN_EMAIL = "gurujuakhila.dev@gmail.com"
 ADMIN_EMAIL_ALLOWLIST = "gurujuakhila.dev@gmail.com"
+# Developers are the Google accounts listed here (comma separated). They can set a GitHub PR,
+# add comments and raise disputes, but cannot approve disputes, assign or set a patch verdict.
+# Anyone not listed (and not the administrator) can still read everything but cannot sign in.
+DEVELOPER_EMAILS = frozenset(
+    email.strip().lower()
+    for email in os.environ.get("VULNEX_DEVELOPER_EMAILS", "").split(",")
+    if email.strip()
+)
 GOOGLE_OAUTH_CLIENT_ID = os.environ.get("GOOGLE_OAUTH_CLIENT_ID", "").strip()
 GOOGLE_OAUTH_CLIENT_SECRET = os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET", "").strip()
 GOOGLE_OAUTH_REDIRECT = os.environ.get("VULNEX_GOOGLE_REDIRECT", "").strip()
@@ -133,6 +142,8 @@ def identity_for(role: str) -> dict:
             "email": AUTOMATION_EMAIL,
             "kind": "automation",
         }
+    if role == ROLE_DEVELOPER:
+        return {"identity": "developer", "email": "", "kind": "developer"}
     return {"identity": "anonymous", "email": "", "kind": "viewer"}
 
 # Endpoints ----------------------------------------------------------------
