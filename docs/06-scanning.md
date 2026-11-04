@@ -74,3 +74,20 @@ All are free. The scan needs no credentials; `GITHUB_TOKEN` only raises the GitH
 - `links`: Ubuntu, Debian, Red Hat, MITRE, OSV and NVD pages for the CVE
 - `patch_availability`: upstream patch verdict and links
 - `deep`: files the fix touches in the source tarball, and backport patch files
+
+## What is removed from the database
+
+To save free-tier storage, the daily scan deletes findings that are **100% patched**: the spec applies the CVE's patch file (`patch_status = applied`) **and** its `%changelog` names the fix (`fixed_in_basis = changelog`).
+
+A finding is deleted only if the fixed-CVE list on `VulnerabilityData` (main branch) already records it, so nothing is lost. If that list cannot be read, nothing is deleted. Findings that are patched but not fully confirmed stay, and are listed after the affected ones.
+
+```
+vulnex.cli prune-patched --branch 3.0 [--dry-run]
+```
+
+Comments, disputes and PR links people saved are not touched.
+
+## Order of the CVE list
+
+Affected CVEs come first. A CVE sorts by its most urgent package, then by severity; all rows of one CVE stay together with affected packages first.
+

@@ -58,7 +58,9 @@ On first start the app creates the tables (Alembic) and seeds them from `data/vu
 - **`ci.yml`**: on pull requests and pushes to `main`. Backend tests on SQLite and PostgreSQL 16, then the frontend type check, tests and build.
 - **`scan.yml`**: daily at 06:17 UTC and on demand. Runs backend tests, scans, syncs to Postgres (if the secret exists), prints stats, builds the static export, commits the new snapshot with `[skip ci]` so it does not loop, and deploys GitHub Pages.
 
-Secrets used: `DATABASE_URL` (optional), `NVD_API_KEY` (optional). `GITHUB_TOKEN` is provided automatically.
+Secrets used (all optional): `DATABASE_URL`, `NVD_API_KEY`, and `VULNEX_VULNDATA_TOKEN` (a token with write access to `VulnerabilityData`, so the scan can publish the fixed-CVE list there as a pull request). `GITHUB_TOKEN` is provided automatically.
+
+After the scan, findings that are 100% patched **and already recorded** in the `VulnerabilityData` fixed-CVE list are deleted to save space (see [Scanning](06-scanning.md)).
 
 ## Releasing a change
 

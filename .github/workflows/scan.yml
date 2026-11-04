@@ -47,6 +47,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       HAS_DB: ${{ secrets.DATABASE_URL != '' }}
+      HAS_VULNDATA_TOKEN: ${{ secrets.VULNEX_VULNDATA_TOKEN != '' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -70,6 +71,26 @@ jobs:
           python -m vulnex.cli scan \
             --branches "${VULNEX_BRANCHES}" \
             --enrich-limit "${{ github.event.inputs.enrich_limit || '400' }}"
+
+      # Optional: record the CVEs this scan found fixed in VulnerabilityData (opens a
+      # pull request there). Needs a token with write access to that repository, saved
+      # as the VULNEX_VULNDATA_TOKEN secret. It runs before the cleanup below so nothing
+      # is deleted before it is recorded.
+      - name: Publish fixed-CVE list to VulnerabilityData
+        if: env.HAS_VULNDATA_TOKEN == 'true'
+        continue-on-error: true
+        working-directory: backend
+        env:
+          VULNEX_VULNDATA_TOKEN: ${{ secrets.VULNEX_VULNDATA_TOKEN }}
+        run: python -m vulnex.cli fixed-cves --branch 3.0 --publish
+
+      # Findings confirmed patched (spec patch + changelog) and already recorded in
+      # VulnerabilityData's fixed-CVE ledger are dropped to save database space. The
+      # ledger is read from the public repo; if it cannot be read, nothing is deleted.
+      - name: Drop findings already recorded as fixed
+        continue-on-error: true
+        working-directory: backend
+        run: python -m vulnex.cli prune-patched --branch 3.0
 
       # Optional: when the DATABASE_URL secret (Supabase connection string) exists,
       # refresh the scan tables there too. Triage data is never touched.

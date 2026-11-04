@@ -26,7 +26,10 @@ import requests
 
 from . import config, db
 
-__all__ = ["build_ledger", "ledger_body", "publish_ledger", "PublishError", "LEDGER_PATH"]
+__all__ = [
+    "build_ledger", "ledger_body", "publish_ledger", "merge_ledgers",
+    "fetch_recorded_ledger", "prune_recorded", "PublishError", "LEDGER_PATH",
+]
 
 LEDGER_PATH = "data/fixed-cves.json"
 SCHEMA_VERSION = 1
@@ -102,6 +105,88 @@ def build_ledger(conn: sqlite3.Connection, branch: str = "3.0") -> dict[str, Any
     }
 
 
+def merge_ledgers(existing: dict[str, Any] | None, new: dict[str, Any]) -> dict[str, Any]:
+    """Union of the recorded ledger and a fresh one; the fresh entry wins per CVE.
+
+    The scan prunes findings once they are recorded, so a ledger rebuilt from the
+    database alone would forget them. Merging keeps the record complete.
+    """
+    if not existing:
+        return new
+    merged: dict[tuple[str, str], dict[str, Any]] = {}
+    for source in (existing, new):
+        for pkg in source.get("packages", []):
+            key = (pkg["name"], pkg.get("version", ""))
+            target = merged.setdefault(key, {**pkg, "fixed": []})
+            if source is new:
+                target.update({k: v for k, v in pkg.items() if k != "fixed"})
+            by_id = {item["id"]: item for item in target["fixed"]}
+            for item in pkg.get("fixed", []):
+                by_id[item["id"]] = item
+            target["fixed"] = sorted(by_id.values(), key=lambda item: item["id"])
+    ordered = sorted(merged.values(), key=lambda p: (p["name"], p.get("version", "")))
+    out = {**new, "packages": ordered}
+    out["stats"] = {
+        "packages": len(ordered),
+        "fixed_cves": sum(len(p["fixed"]) for p in ordered),
+        "from_changelog": sum(
+            1 for p in ordered for f in p["fixed"] if f.get("basis") == "changelog"
+        ),
+    }
+    return out
+
+
+def fetch_recorded_ledger(
+    repo: str | None = None, base: str | None = None, session: requests.Session | None = None
+) -> dict[str, Any] | None:
+    """The ledger currently on VulnerabilityData's base branch, or None if unreadable."""
+    repo = repo or config.VULNERABILITYDATA_REPO
+    base = base or config.VULNERABILITYDATA_BRANCH
+    url = f"{config.GITHUB_RAW}/{repo}/{base}/{LEDGER_PATH}"
+    try:
+        resp = (session or requests).get(url, timeout=config.HTTP_TIMEOUT)
+        if resp.status_code != 200:
+            return None
+        return resp.json()
+    except (requests.RequestException, ValueError):
+        return None
+
+
+def prune_recorded(
+    conn: sqlite3.Connection, recorded: dict[str, Any] | None, branch: str = "3.0",
+    dry_run: bool = False,
+) -> int:
+    """Delete findings that are confirmed patched AND already recorded in the ledger.
+
+    Confirmed means both the spec's applied ``CVE-*.patch`` file and a ``%changelog``
+    entry name the fix. Anything not yet in the recorded ledger is kept, so nothing
+    is lost if the ledger could not be read or its pull request is still open.
+    """
+    if not recorded:
+        return 0
+    keys = {
+        (pkg["name"], pkg.get("version", ""), item["id"])
+        for pkg in recorded.get("packages", [])
+        for item in pkg.get("fixed", [])
+    }
+    rows = conn.execute(
+        f"SELECT id, cve_id, package_name, package_version FROM findings "
+        f"WHERE branch = ? AND {db.CONFIRMED_PATCHED_SQL}",
+        (branch,),
+    ).fetchall()
+    doomed = [
+        r["id"] for r in rows
+        if (r["package_name"], _split_evr(r["package_version"])[0], r["cve_id"]) in keys
+    ]
+    if doomed and not dry_run:
+        for start in range(0, len(doomed), 500):
+            chunk = doomed[start:start + 500]
+            marks = ",".join("?" * len(chunk))
+            conn.execute(f"DELETE FROM findings WHERE id IN ({marks})", chunk)
+        conn.commit()
+    return len(doomed)
+
+
 def ledger_body(ledger: dict[str, Any]) -> str:
     """Stable JSON text for the ledger (sorted keys, trailing newline)."""
     return json.dumps(ledger, indent=2, sort_keys=True) + "\n"
@@ -145,7 +230,6 @@ def publish_ledger(
         "Accept": "application/vnd.github+json",
         "X-GitHub-Api-Version": "2022-11-28",
     }
-    body = ledger_body(ledger)
     contents = f"{_API}/repos/{repo}/contents/{path}"
 
     current = http.get(contents, headers=headers, params={"ref": base}, timeout=config.HTTP_TIMEOUT)
@@ -154,10 +238,14 @@ def publish_ledger(
         payload = current.json()
         sha = payload.get("sha")
         existing = base64.b64decode(payload.get("content", "")).decode("utf-8")
+        # Keep CVEs recorded earlier even if their findings were pruned since.
+        ledger = merge_ledgers(json.loads(existing), ledger)
+        body = ledger_body(ledger)
         if _comparable(existing) == _comparable(body):
             return {"changed": False, "reason": "ledger already up to date"}
     elif current.status_code != 404:
         raise PublishError(f"reading {path} failed: HTTP {current.status_code}")
+    body = ledger_body(ledger)
 
     ref = _check(
         http.get(f"{_API}/repos/{repo}/git/ref/heads/{base}", headers=headers, timeout=config.HTTP_TIMEOUT),

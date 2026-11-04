@@ -141,6 +141,21 @@ def _cmd_fixed_cves(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_prune_patched(args: argparse.Namespace) -> int:
+    """Delete confirmed-patched findings that VulnerabilityData already records."""
+    from . import fixed_cves
+
+    recorded = fixed_cves.fetch_recorded_ledger(args.repo, args.base)
+    if recorded is None:
+        print("[vulnex] Could not read the recorded ledger; nothing was deleted.", file=sys.stderr)
+        return 1
+    with db.session(args.db) as conn:
+        count = fixed_cves.prune_recorded(conn, recorded, args.branch, dry_run=args.dry_run)
+    verb = "would delete" if args.dry_run else "deleted"
+    print(f"[vulnex] {verb} {count} confirmed-patched findings already recorded in the ledger.")
+    return 0
+
+
 def _cmd_migrate_sqlite(args: argparse.Namespace) -> int:
     """Copy a SQLite snapshot into the PostgreSQL database named by DATABASE_URL."""
     from .sqlite_import import import_sqlite
@@ -233,6 +248,17 @@ def build_parser() -> argparse.ArgumentParser:
     fixed.add_argument("--base", default="main")
     fixed.add_argument("--no-pr", action="store_true")
     fixed.set_defaults(func=_cmd_fixed_cves)
+
+    prune = sub.add_parser(
+        "prune-patched",
+        help="Delete findings confirmed patched (spec patch + changelog) and already in the ledger",
+    )
+    prune.add_argument("--branch", default="3.0")
+    prune.add_argument("--db", default=None)
+    prune.add_argument("--repo", default=None, help="owner/name; default VulnerabilityData")
+    prune.add_argument("--base", default=None)
+    prune.add_argument("--dry-run", action="store_true")
+    prune.set_defaults(func=_cmd_prune_patched)
 
     migrate = sub.add_parser(
         "migrate-sqlite",
