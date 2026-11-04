@@ -95,7 +95,14 @@ def test_migrations_are_idempotent(pg):
     db._migrated.clear()
     db.init_db(pg)
     db.init_db(pg)
-    assert pg.execute("SELECT version_num FROM alembic_version").fetchone()["version_num"] == "0001"
+    # The latest migration in the repo, not a fixed number, so adding a migration never breaks this.
+    from alembic.config import Config
+    from alembic.script import ScriptDirectory
+
+    cfg = Config(str(db._BACKEND_DIR / "alembic.ini"))
+    cfg.set_main_option("script_location", str(db._BACKEND_DIR / "migrations"))
+    head = ScriptDirectory.from_config(cfg).get_current_head()
+    assert pg.execute("SELECT version_num FROM alembic_version").fetchone()["version_num"] == head
 
 
 @needs_pg
