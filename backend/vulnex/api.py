@@ -24,7 +24,7 @@ from pydantic import BaseModel
 from . import __version__, auth, cache, config, db, fixed_cves, triage
 from .enrichment import enrich_cve
 from .pgcompat import DatabaseUnavailable
-from .sqlite_import import seed_if_empty
+from .sqlite_import import backfill_first_seen, seed_if_empty
 from .scanner import ScanOptions, run_scan
 from .sources.vulnerabilitydata import FeedError, VulnerabilityDataSource
 
@@ -48,6 +48,13 @@ def _prepare_database(conn) -> None:
         _log.error("Could not load the bundled snapshot into Postgres: %s", exc)
         return
     _seeded = True
+    try:
+        filled = backfill_first_seen(conn, config.DB_PATH)
+        if filled:
+            _log.info("Backfilled first-scanned dates from the snapshot (%s rows checked)", filled)
+    except Exception as exc:
+        conn.rollback()
+        _log.error("Could not backfill first-scanned dates: %s", exc)
     if result.get("seeded"):
         _log.info("Loaded bundled scan snapshot into Postgres: %s", result["copied"])
 

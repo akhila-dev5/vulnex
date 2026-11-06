@@ -307,3 +307,24 @@ def test_app_shows_cves_on_first_start_without_a_manual_import(tmp_path, monkeyp
         items = client.get("/api/findings", params={"branch": "3.0"}).json()["items"]
         assert [f["cve_id"] for f in items] == ["CVE-2024-9"]
         assert client.get("/api/stats", params={"branch": "3.0"}).json()["total_findings"] == 1
+
+
+@needs_pg
+def test_backfill_fills_only_empty_first_seen_dates(tmp_path, pg):
+    from vulnex.sqlite_import import backfill_first_seen
+
+    src = tmp_path / "s.db"
+    _sqlite_with_data(src)
+    conn = db.connect(src)
+    conn.execute("UPDATE findings SET first_seen = '2026-09-26T10:00:00Z'")
+    conn.commit()
+    conn.close()
+    import_sqlite(src, pg, only="all")
+    pg.execute("UPDATE findings SET first_seen = NULL")
+    pg.commit()
+    assert backfill_first_seen(pg, src) == 1
+    assert pg.execute("SELECT first_seen FROM findings").fetchone()["first_seen"] == "2026-09-26T10:00:00Z"
+    pg.execute("UPDATE findings SET first_seen = '2026-10-01T00:00:00Z'")
+    pg.commit()
+    backfill_first_seen(pg, src)  # nothing empty, so nothing changes
+    assert pg.execute("SELECT first_seen FROM findings").fetchone()["first_seen"] == "2026-10-01T00:00:00Z"

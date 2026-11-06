@@ -126,3 +126,40 @@ def seed_if_empty(pg, sqlite_path: str | Path) -> dict[str, Any]:
     result = import_sqlite(sqlite_path, pg, only="all")
     result["seeded"] = bool(result["copied"].get("findings"))
     return result
+
+
+def backfill_first_seen(pg, sqlite_path: str | Path) -> int:
+    """Fill ``findings.first_seen`` in Postgres from the bundled snapshot.
+
+    Rows that existed before the column was added have no date. The snapshot in
+    the repo carries them, so copy them over by CVE + branch + spec path. Only
+    empty dates are filled; a date already set is never changed.
+    """
+    if not Path(sqlite_path).is_file():
+        return 0
+    if not pg.execute("SELECT 1 FROM findings WHERE first_seen IS NULL LIMIT 1").fetchone():
+        return 0
+    src = sqlite3.connect(str(sqlite_path))
+    try:
+        if "first_seen" not in _sqlite_columns(src, "findings"):
+            return 0
+        rows = src.execute(
+            "SELECT cve_id, COALESCE(branch, ''), COALESCE(spec_path, ''), first_seen "
+            "FROM findings WHERE first_seen IS NOT NULL"
+        ).fetchall()
+    finally:
+        src.close()
+    # One statement per 500 rows keeps this to a handful of round trips.
+    for start in range(0, len(rows), 500):
+        chunk = rows[start:start + 500]
+        values = ", ".join(["(?, ?, ?, ?)"] * len(chunk))
+        params = [value for row in chunk for value in row]
+        pg.execute(
+            "UPDATE findings AS f SET first_seen = v.seen "
+            f"FROM (VALUES {values}) AS v(cve_id, branch, spec_path, seen) "
+            "WHERE f.first_seen IS NULL AND f.cve_id = v.cve_id "
+            "AND COALESCE(f.branch, '') = v.branch AND COALESCE(f.spec_path, '') = v.spec_path",
+            params,
+        )
+    pg.commit()
+    return len(rows)

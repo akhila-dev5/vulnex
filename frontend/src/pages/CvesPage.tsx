@@ -12,7 +12,7 @@ import { StatusPill } from "../components/StatusPill";
 import { useScan } from "../hooks/useScan";
 import { addRecent, DEFAULT_FILTERS, loadRecent, PAGE_SIZE, removeRecent, saveRecent, toFindingParams, type Filters } from "../lib/filters";
 import { findingKey, groupByCve, ownerOf, resolutionOf, triageStatusOf } from "../lib/findings";
-import { formatDate, formatDateTime, severityLabel, severityTone, statusLabel, statusTone } from "../lib/labels";
+import { formatDateTime, formatDayMonth, formatDmy, severityLabel, severityTone, statusLabel, statusTone } from "../lib/labels";
 
 const COLUMNS = 8;
 
@@ -73,16 +73,17 @@ export function CvesPage() {
   };
 
   const groups = useMemo(() => groupByCve(rows), [rows]);
-  // Each CVE starts collapsed; the person opens the ones they want to inspect.
-  const [open, setOpen] = useState<Set<string>>(() => new Set());
+  // Every CVE starts expanded; the person can close the ones they do not need.
+  const [closed, setClosed] = useState<Set<string>>(() => new Set());
+  const isOpen = (id: string) => !closed.has(id);
   const toggle = (id: string) =>
-    setOpen((current) => {
+    setClosed((current) => {
       const next = new Set(current);
       if (!next.delete(id)) next.add(id);
       return next;
     });
-  const allOpen = groups.length > 0 && groups.every((g) => open.has(g.cveId));
-  const setAll = (expand: boolean) => setOpen(expand ? new Set(groups.map((g) => g.cveId)) : new Set());
+  const allOpen = groups.every((g) => isOpen(g.cveId));
+  const setAll = (expand: boolean) => setClosed(expand ? new Set() : new Set(groups.map((g) => g.cveId)));
   const scanRunning = scan.state !== "idle";
   const highSeverity = (stats?.severity?.critical ?? 0) + (stats?.severity?.high ?? 0);
 
@@ -140,7 +141,7 @@ export function CvesPage() {
           <article className="metric-card">
             <span className="metric-icon green"><CheckCircle2 size={18} /></span>
             <small>Last completed scan</small>
-            <strong>{stats?.last_scan?.finished_at ? new Date(stats.last_scan.finished_at).toLocaleDateString() : "—"}</strong>
+            <strong>{stats?.last_scan?.finished_at ? formatDmy(stats.last_scan.finished_at) : "—"}</strong>
             <span>{stats?.last_scan?.branches ? `Branches ${stats.last_scan.branches}` : "No scan yet"}</span>
           </article>
         </section>
@@ -210,11 +211,11 @@ export function CvesPage() {
                       <th scope="colgroup" colSpan={COLUMNS}>
                         <button
                           className="group-toggle"
-                          aria-expanded={open.has(group.cveId)}
-                          aria-label={`${open.has(group.cveId) ? "Hide" : "Show"} packages for ${group.cveId}`}
+                          aria-expanded={isOpen(group.cveId)}
+                          aria-label={`${isOpen(group.cveId) ? "Hide" : "Show"} packages for ${group.cveId}`}
                           onClick={() => toggle(group.cveId)}
                         >
-                          {open.has(group.cveId) ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                          {isOpen(group.cveId) ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
                         </button>
                         <CveLink id={group.cveId}>{group.cveId} →</CveLink>
                         <StatusPill tone={severityTone(group.severity)}>
@@ -226,14 +227,14 @@ export function CvesPage() {
                         </span>
                       </th>
                     </tr>
-                    {open.has(group.cveId) && group.rows.map((row) => (
+                    {isOpen(group.cveId) && group.rows.map((row) => (
                       <tr key={findingKey(row)}>
                         <td>
                           <strong>{row.package_name || "Unknown package"}</strong>
                           <small>{row.package_version || "version unavailable"}</small>
                         </td>
                         <td title={row.first_seen ? "First scanned " + formatDateTime(row.first_seen) : "Scan date not recorded yet"}>
-                          {formatDate(row.first_seen)}
+                          {formatDayMonth(row.first_seen)}
                         </td>
                         <td><code>{row.branch}</code></td>
                         <td><PatchIcon finding={row} /></td>
