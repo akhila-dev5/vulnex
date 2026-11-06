@@ -8,7 +8,7 @@ There are four pages, chosen by the part of the URL after `#`.
 
 | URL | Page | Shows |
 |-----|------|-------|
-| `#/` | CVEs (`CvesPage.tsx`) | Filter sidebar, four summary cards, findings grouped by CVE |
+| `#/` | CVEs (`CvesPage.tsx`) | Filter sidebar, four summary cards, findings grouped by CVE. Each CVE has a chevron that opens its package rows (collapsed by default, plus Expand all / Collapse all). Columns include **Scanned**, the date the finding first appeared |
 | `#/packages` | Packages (`PackagesPage.tsx`) | Every scanned package and its version |
 | `#/disputes` | Disputes (`DisputesPage.tsx`) | Every dispute request in Pending / Approved / Rejected tabs; the admin approves or rejects here |
 | `#/cve/<id>` | CVE detail (`CveDetailPage.tsx`) | The CVE, severity box, tracker links, and a table of every affected package |

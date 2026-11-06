@@ -84,6 +84,8 @@ export type Finding = {
   fixed_version?: string;
   /** azurelinux-test version-release in which this CVE was patched (changelog); null while unfixed. */
   azl_fixed_version?: string | null;
+  /** When this CVE was first seen on this package (carried across scans). */
+  first_seen?: string | null;
   /** "changelog" = named in the spec changelog; "spec-evr" = bounded by the scanned release. */
   azl_fixed_basis?: string | null;
   advisory_id?: string;
