@@ -67,7 +67,7 @@ a:hover { text-decoration: underline; }
 .status-pill.unknown, .status-pill.neutral { background: #edf0f4; color: #57657a; }
 
 /* ---- two-column workspace: filters left, content right ---- */
-.workspace { flex: 1; display: grid; grid-template-columns: 224px minmax(0, 1fr); align-items: start; }
+.workspace { flex: 1; display: grid; grid-template-columns: 240px minmax(0, 1fr); align-items: start; }
 .filters { background: #fff; border-right: 1px solid var(--line); padding: 20px 14px 28px; position: sticky; top: 60px; max-height: calc(100vh - 60px); overflow-y: auto; align-self: stretch; }
 .filters-toggle { display: none; width: 100%; }
 .filters form { display: grid; gap: 12px; }
