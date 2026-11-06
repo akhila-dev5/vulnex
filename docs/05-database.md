@@ -20,7 +20,7 @@ Scan tables (replaced on every scan):
 | `scans` | One row per scan: time, branches, counts, duration, status |
 | `packages` | One row per spec: name, version, release, EVR, spec path, source tarball, patch count |
 | `patches` | Each `Patch:` entry in a spec: file name, CVE ids, whether it is a `.nopatch` marker, whether the file exists |
-| `findings` | One row per CVE per package: status, severity, CVSS, confidence, evidence, advisory, `fixed_version` (upstream), `fixed_in`, `fixed_in_basis`, `fix_source` |
+| `findings` | One row per CVE per package: status, severity, CVSS, confidence, evidence, advisory, `fixed_version` (upstream), `fixed_in`, `fixed_in_basis`, `fix_source`, `first_seen` (date first detected; carried forward across scans, so the CVE list can show the newest affected CVEs first) |
 
 Triage tables (typed by people, never overwritten by a scan):
 

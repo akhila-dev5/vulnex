@@ -106,6 +106,7 @@ CREATE TABLE IF NOT EXISTS findings (
     fixed_in TEXT,
     fixed_in_basis TEXT,
     fix_source TEXT,
+    first_seen TEXT,
     affected_files TEXT,
     corroborating_sources TEXT,
     evidence TEXT,
@@ -262,7 +263,7 @@ def init_db(conn) -> None:
     finding_columns = {
         row["name"] for row in conn.execute("PRAGMA table_info(findings)").fetchall()
     }
-    for column in ("fixed_in", "fixed_in_basis", "fix_source"):
+    for column in ("fixed_in", "fixed_in_basis", "fix_source", "first_seen"):
         if column not in finding_columns:
             conn.execute(f"ALTER TABLE findings ADD COLUMN {column} TEXT")
     conn.commit()
@@ -335,6 +336,15 @@ def finish_scan(
     conn.commit()
 
 
+def _first_seen_index(conn: sqlite3.Connection) -> dict[tuple[str, str, str], str]:
+    """When each CVE + branch + spec was first scanned, from the snapshot about to be replaced."""
+    rows = conn.execute(
+        "SELECT cve_id, COALESCE(branch, '') AS b, COALESCE(spec_path, '') AS s, first_seen "
+        "FROM findings WHERE first_seen IS NOT NULL"
+    ).fetchall()
+    return {(r["cve_id"], r["b"], r["s"]): r["first_seen"] for r in rows}
+
+
 def replace_snapshot(
     conn: sqlite3.Connection,
     scan_id: int,
@@ -348,6 +358,11 @@ def replace_snapshot(
     Legacy development/fasttrack rows are always purged. A scan of 4.0 must not
     erase the already-scanned 3.0 snapshot (and vice versa).
     """
+    # A scan replaces every finding, so remember when each one was first seen before the
+    # old rows go. A finding that is new in this scan starts at this scan's start time.
+    seen = _first_seen_index(conn)
+    started = conn.execute("SELECT started_at FROM scans WHERE id = ?", (scan_id,)).fetchone()
+    scanned_at = (started["started_at"] if started else None) or utcnow()
     if branches:
         placeholders = ",".join("?" for _ in branches)
         for table in ("packages", "patches", "findings"):
@@ -389,17 +404,20 @@ def replace_snapshot(
         {"fixed_in": None, "fixed_in_basis": None, "fix_source": None, **row}
         for row in findings
     ]
+    for row in findings:
+        key = (row["cve_id"], row.get("branch") or "", row.get("spec_path") or "")
+        row["first_seen"] = row.get("first_seen") or seen.get(key) or scanned_at
     conn.executemany(
         """
         INSERT INTO findings (scan_id, cve_id, package_name, package_version, branch,
             spec_path, status, severity, cvss_score, cvss_vector, confidence,
             description, fixed_version, advisory_id, source, refs, upstream_fix,
-            patch_name, patch_status, fixed_in, fixed_in_basis, fix_source,
+            patch_name, patch_status, fixed_in, fixed_in_basis, fix_source, first_seen,
             affected_files, corroborating_sources, evidence, raw_sources)
         VALUES (:scan_id, :cve_id, :package_name, :package_version, :branch,
             :spec_path, :status, :severity, :cvss_score, :cvss_vector, :confidence,
             :description, :fixed_version, :advisory_id, :source, :refs, :upstream_fix,
-            :patch_name, :patch_status, :fixed_in, :fixed_in_basis, :fix_source,
+            :patch_name, :patch_status, :fixed_in, :fixed_in_basis, :fix_source, :first_seen,
             :affected_files, :corroborating_sources, :evidence, :raw_sources)
         """,
         findings,
@@ -696,19 +714,26 @@ def list_findings(
         "WHEN 'low' THEN 3 WHEN 'none' THEN 4 ELSE 5 END"
     )
     # A CVE sorts by its most urgent package, so a CVE that is still affected anywhere
-    # leads the list. All rows of one CVE stay together (cve_id comes before any
-    # per-row column) with affected packages first inside it.
-    order = f"cve_rank, cve_sev, f.cve_id, {rank}, f.confidence DESC, f.package_name"
+    # leads the list. Among affected CVEs the most recently scanned come first, then by
+    # severity. All rows of one CVE stay together (cve_id comes before any per-row
+    # column) with affected packages first inside it.
+    order = (
+        f"cve_rank, cve_new DESC, cve_sev, f.cve_id, {rank}, "
+        "COALESCE(f.first_seen, '') DESC, f.confidence DESC, f.package_name"
+    )
     rows = _rows(
         conn,
         f"SELECT f.*, MIN({rank}) OVER (PARTITION BY f.cve_id) AS cve_rank, "
-        f"MIN({sev}) OVER (PARTITION BY f.cve_id) AS cve_sev "
+        f"MIN({sev}) OVER (PARTITION BY f.cve_id) AS cve_sev, "
+        f"MAX(CASE WHEN {rank} = 0 THEN COALESCE(f.first_seen, '') ELSE '' END) "
+        "OVER (PARTITION BY f.cve_id) AS cve_new "
         f"FROM findings f{join}{where} ORDER BY {order} LIMIT ? OFFSET ?",
         [*params, limit, offset],
     )
     for f in rows:
         f.pop("cve_rank", None)
         f.pop("cve_sev", None)
+        f.pop("cve_new", None)
     for f in rows:
         _hydrate_finding(f)
     return rows, total

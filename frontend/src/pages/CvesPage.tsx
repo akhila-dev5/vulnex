@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Activity, AlertCircle, AlertTriangle, CheckCircle2, Clock3, FileSearch, Package, RefreshCw, ShieldAlert } from "lucide-react";
+import { Activity, AlertCircle, AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, Clock3, FileSearch, Package, RefreshCw, ShieldAlert } from "lucide-react";
 import { isAbort, messageOf, request } from "../api/client";
 import type { Finding, PageResult, Stats } from "../api/types";
 import { useApp } from "../app-context";
@@ -12,9 +12,9 @@ import { StatusPill } from "../components/StatusPill";
 import { useScan } from "../hooks/useScan";
 import { addRecent, DEFAULT_FILTERS, loadRecent, PAGE_SIZE, removeRecent, saveRecent, toFindingParams, type Filters } from "../lib/filters";
 import { findingKey, groupByCve, ownerOf, resolutionOf, triageStatusOf } from "../lib/findings";
-import { formatDateTime, severityLabel, severityTone, statusLabel, statusTone } from "../lib/labels";
+import { formatDate, formatDateTime, severityLabel, severityTone, statusLabel, statusTone } from "../lib/labels";
 
-const COLUMNS = 7;
+const COLUMNS = 8;
 
 /**
  * The home page: every CVE found in the scan, grouped by CVE, with the search
@@ -73,6 +73,16 @@ export function CvesPage() {
   };
 
   const groups = useMemo(() => groupByCve(rows), [rows]);
+  // Each CVE starts collapsed; the person opens the ones they want to inspect.
+  const [open, setOpen] = useState<Set<string>>(() => new Set());
+  const toggle = (id: string) =>
+    setOpen((current) => {
+      const next = new Set(current);
+      if (!next.delete(id)) next.add(id);
+      return next;
+    });
+  const allOpen = groups.length > 0 && groups.every((g) => open.has(g.cveId));
+  const setAll = (expand: boolean) => setOpen(expand ? new Set(groups.map((g) => g.cveId)) : new Set());
   const scanRunning = scan.state !== "idle";
   const highSeverity = (stats?.severity?.critical ?? 0) + (stats?.severity?.high ?? 0);
 
@@ -154,6 +164,9 @@ export function CvesPage() {
               <span>
                 <Clock3 size={14} /> {stats?.last_scan?.finished_at ? formatDateTime(stats.last_scan.finished_at) : "Waiting for first scan"}
               </span>
+              <button className="btn" onClick={() => setAll(!allOpen)} disabled={groups.length === 0}>
+                {allOpen ? "Collapse all" : "Expand all"}
+              </button>
               <button
                 className="icon-btn"
                 onClick={() => void scan.run()}
@@ -182,6 +195,7 @@ export function CvesPage() {
                 <thead>
                   <tr>
                     <th scope="col">Package</th>
+                    <th scope="col">Scanned</th>
                     <th scope="col">Branch</th>
                     <th scope="col">Patch</th>
                     <th scope="col">Triage status</th>
@@ -194,21 +208,32 @@ export function CvesPage() {
                   <tbody key={group.cveId}>
                     <tr className="group-row">
                       <th scope="colgroup" colSpan={COLUMNS}>
+                        <button
+                          className="group-toggle"
+                          aria-expanded={open.has(group.cveId)}
+                          aria-label={`${open.has(group.cveId) ? "Hide" : "Show"} packages for ${group.cveId}`}
+                          onClick={() => toggle(group.cveId)}
+                        >
+                          {open.has(group.cveId) ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                        </button>
                         <CveLink id={group.cveId}>{group.cveId} →</CveLink>
                         <StatusPill tone={severityTone(group.severity)}>
                           {severityLabel(group.severity)}
                           {group.cvssScore != null ? ` · ${group.cvssScore}` : ""}
                         </StatusPill>
                         <span className="group-count">
-                          {group.rows.length} package{group.rows.length === 1 ? "" : "s"} on this page
+                          {group.rows.length} package{group.rows.length === 1 ? "" : "s"}
                         </span>
                       </th>
                     </tr>
-                    {group.rows.map((row) => (
+                    {open.has(group.cveId) && group.rows.map((row) => (
                       <tr key={findingKey(row)}>
                         <td>
                           <strong>{row.package_name || "Unknown package"}</strong>
                           <small>{row.package_version || "version unavailable"}</small>
+                        </td>
+                        <td title={row.first_seen ? "First scanned " + formatDateTime(row.first_seen) : "Scan date not recorded yet"}>
+                          {formatDate(row.first_seen)}
                         </td>
                         <td><code>{row.branch}</code></td>
                         <td><PatchIcon finding={row} /></td>
