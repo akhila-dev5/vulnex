@@ -64,7 +64,6 @@ describe("CVEs page (home)", () => {
     vi.stubGlobal("fetch", stubFetch(routes).fn);
     renderWith(guestContext, <CvesPage />);
     await screen.findByRole("link", { name: /CVE-2026-1000/ });
-    await userEvent.click(screen.getByRole("button", { name: /expand all/i }));
     expect(await screen.findByText("rabbitmq-server")).toBeInTheDocument();
     expect(screen.getByRole("complementary", { name: /search filters/i })).toBeInTheDocument();
     expect(screen.getAllByRole("rowgroup").length).toBeGreaterThan(2); // header + one body per CVE
@@ -72,26 +71,34 @@ describe("CVEs page (home)", () => {
     expect(screen.getByText("kernel")).toBeInTheDocument();
   });
 
-  it("starts collapsed, shows the scanned date, and toggles one CVE", async () => {
-    vi.stubGlobal("fetch", stubFetch({ ...routes, "/findings": { items: [finding({ first_seen: "2026-11-05T14:45:05Z" }), OTHER_CVE], total: 2 } }).fn);
+  it("starts expanded, shows the scanned day and month, and toggles one CVE", async () => {
+    vi.stubGlobal("fetch", stubFetch({ ...routes, "/findings": { items: [finding({ first_seen: "2026-09-26T10:00:00Z" }), OTHER_CVE], total: 2 } }).fn);
     renderWith(guestContext, <CvesPage />);
-    await screen.findByRole("link", { name: /CVE-2026-1000/ });
-    expect(screen.queryByText("rabbitmq-server")).toBeNull();
+    expect(await screen.findByText("rabbitmq-server")).toBeInTheDocument();
+    expect(screen.getByText("kernel")).toBeInTheDocument();
     const heads = screen.getAllByRole("columnheader").map((h) => h.textContent);
     expect(heads.indexOf("Scanned")).toBe(heads.indexOf("Package") + 1);
-    await userEvent.click(screen.getByRole("button", { name: /show packages for CVE-2026-1000/i }));
-    expect(screen.getByText("rabbitmq-server")).toBeInTheDocument();
-    expect(screen.getByTitle(/First scanned/)).toBeInTheDocument();
-    expect(screen.queryByText("kernel")).toBeNull();
+    expect(screen.getByText("26, Sep")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: /hide packages for CVE-2026-1000/i }));
     expect(screen.queryByText("rabbitmq-server")).toBeNull();
+    expect(screen.getByText("kernel")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /expand all/i }));
+    expect(screen.getByText("rabbitmq-server")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /collapse all/i }));
+    expect(screen.queryByText("kernel")).toBeNull();
+  });
+
+  it("shows the last completed scan as DD/MM/YYYY", async () => {
+    vi.stubGlobal("fetch", stubFetch(routes).fn);
+    renderWith(guestContext, <CvesPage />);
+    await screen.findByText("rabbitmq-server");
+    expect(screen.getAllByText(/^\d{2}\/\d{2}\/\d{4}$/).length).toBeGreaterThan(0);
   });
 
   it("has no Deep, Actions or Assign buttons", async () => {
     vi.stubGlobal("fetch", stubFetch(routes).fn);
     renderWith(adminContext, <CvesPage />);
     await screen.findByRole("link", { name: /CVE-2026-1000/ });
-    await userEvent.click(screen.getByRole("button", { name: /expand all/i }));
     expect(screen.queryByRole("button", { name: /deep/i })).toBeNull();
     expect(screen.queryByRole("button", { name: /^actions/i })).toBeNull();
     expect(screen.queryByRole("button", { name: /assign/i })).toBeNull();
@@ -102,7 +109,6 @@ describe("CVEs page (home)", () => {
     vi.stubGlobal("fetch", stubFetch(routes).fn);
     renderWith(guestContext, <CvesPage />);
     await screen.findByRole("link", { name: /CVE-2026-1000/ });
-    await userEvent.click(screen.getByRole("button", { name: /expand all/i }));
     const link = screen.getByRole("link", { name: /CVE-2026-1000/ });
     expect(link).toHaveAttribute("href", "#/cve/CVE-2026-1000");
     expect(link).toHaveAttribute("target", "_blank");
@@ -115,7 +121,6 @@ describe("CVEs page (home)", () => {
     const user = userEvent.setup();
     renderWith(guestContext, <CvesPage />);
     await screen.findByRole("link", { name: /CVE-2026-1000/ });
-    await userEvent.click(screen.getByRole("button", { name: /expand all/i }));
 
     await user.type(screen.getByLabelText(/package \(exact name\)/i), "rabbitmq-server");
     await user.selectOptions(screen.getByLabelText(/severity/i), "high");
@@ -304,7 +309,6 @@ describe("Fixed version column (azurelinux-test release, never the upstream vers
     vi.stubGlobal("fetch", stubFetch({ "/stats": STATS, "/findings": { items: [finding(), SECOND], total: 2 } }).fn);
     renderWith(guestContext, <CvesPage />);
     await screen.findByRole("link", { name: /CVE-2026-1000/ });
-    await userEvent.click(screen.getByRole("button", { name: /expand all/i }));
     expect(fixedCell("rabbitmq-server")).toHaveTextContent("—");
     expect(fixedCell("zchunk")).toHaveTextContent("1.3.1-4");
     expect(screen.queryByText("3.13.15")).toBeNull();
@@ -315,7 +319,6 @@ describe("Fixed version column (azurelinux-test release, never the upstream vers
     vi.stubGlobal("fetch", stubFetch({ "/stats": STATS, "/findings": { items: [bounded], total: 1 } }).fn);
     renderWith(guestContext, <CvesPage />);
     await screen.findByRole("link", { name: /CVE-2026-1000/ });
-    await userEvent.click(screen.getByRole("button", { name: /expand all/i }));
     await screen.findByText("demo");
     const cell = fixedCell("demo");
     expect(cell).toHaveTextContent("2.0-5");

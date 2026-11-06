@@ -53,6 +53,8 @@ When you change a table, add an Alembic revision for PostgreSQL **and** the matc
 3. `--only all` copies everything once, used when first moving to Supabase.
 4. On startup, an **empty** PostgreSQL database is seeded from `data/vulnex.db` so a fresh deployment is not blank.
 
+On every start, PostgreSQL rows with an empty `first_seen` get their date from the bundled snapshot (`backfill_first_seen`), so the Scanned column fills in after a deploy without waiting for the next scan.
+
 A non-empty triage table is never overwritten unless `--force` is passed.
 
 ## Connections

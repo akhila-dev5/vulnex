@@ -66,3 +66,20 @@ export function formatDate(value?: string | null): string {
     ? value
     : date.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
 }
+
+/** Short day-and-month label such as "26, Sep" for the Scanned column. */
+export function formatDayMonth(value?: string | null): string {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return `${date.getDate()}, ${date.toLocaleDateString("en-US", { month: "short" })}`;
+}
+
+/** DD/MM/YYYY, independent of the browser's locale. */
+export function formatDmy(value?: string | null): string {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  const two = (n: number) => String(n).padStart(2, "0");
+  return `${two(date.getDate())}/${two(date.getMonth() + 1)}/${date.getFullYear()}`;
+}
