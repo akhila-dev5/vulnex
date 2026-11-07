@@ -15,7 +15,9 @@ There are four pages, chosen by the part of the URL after `#`.
 
 ![CVE detail page](images/cve-detail.png)
 
-Each row on the CVE detail page has a **Deep** button, an **Actions** menu and an arrow to open that package's panel. In the menu, **Set GitHub PR**, **Dispute** and **Add comment** work for developers and the admin; **Patch verdict** and **Assign reviewer** are admin-only (`canUseAction` in `lib/triage.ts`).
+Each row on the CVE detail page has a **Deep** button, an **Actions** menu and an arrow to open that package's panel. In the menu, **Set GitHub PR**, **Dispute** and **Add comment** work for developers and the admin; **Patch verdict**, **Assign reviewer** and **Rescore** are admin-only (`canUseAction` in `lib/triage.ts`).
+
+**Rescore** (admin) opens a form with a CVSS score, a severity (suggested from the score) and a required reason. The Severity box on the CVE page then shows the new values and a note with who rescored it and why; the scanned values are kept.
 
 A dispute goes: developer raises it → it appears under **Disputes** as Pending (the package shows "Pending dispute") → the admin approves → the package's resolution status becomes **Disputed** and the reason shows under the package ("Approved dispute"). A rejected dispute changes nothing on the package.
 

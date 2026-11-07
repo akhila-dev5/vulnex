@@ -12,6 +12,29 @@ from ..http import CachedHTTP
 __all__ = ["MITRESource"]
 
 
+_METRIC_KEYS = ("cvssV3_1", "cvssV3_0", "cvssV4_0", "cvssV2_0")
+
+
+def pick_cvss(containers: dict) -> tuple[str, float | None, str]:
+    """Best CVSS score in a CVE 5 record: the CNA's own, then any ADP (e.g. CISA-ADP).
+
+    The CVE Program record carries scores even while NVD has not analysed the CVE.
+    """
+    boxes = [containers.get("cna") or {}] + list(containers.get("adp") or [])
+    for key in _METRIC_KEYS:
+        for box in boxes:
+            for metric in box.get("metrics") or []:
+                data = metric.get(key)
+                if not data or data.get("baseScore") is None:
+                    continue
+                try:
+                    score = float(data["baseScore"])
+                except (TypeError, ValueError):
+                    continue
+                return data.get("vectorString", ""), score, str(data.get("baseSeverity", "")).lower()
+    return "", None, ""
+
+
 class MITRESource:
     name = "mitre"
 
@@ -35,11 +58,12 @@ class MITRESource:
             references.append({"type": "mitre-ref", "url": ref.get("url", "")})
 
         cve_metadata = data.get("cveMetadata") or {}
+        vector, score, severity = pick_cvss(containers)
         return {
             "source": self.name,
-            "severity": "unknown",
-            "cvss_score": None,
-            "cvss_vector": "",
+            "severity": severity or "unknown",
+            "cvss_score": score,
+            "cvss_vector": vector,
             "description": description,
             "published": (cve_metadata.get("datePublished") or "")[:10],
             "fixed_versions": [],

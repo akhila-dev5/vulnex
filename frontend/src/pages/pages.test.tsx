@@ -194,7 +194,7 @@ describe("CVE page", () => {
     await screen.findByRole("heading", { level: 1 });
     await user.click(screen.getAllByRole("button", { name: /^actions for/i })[0]!);
     const items = screen.getAllByRole("menuitem");
-    expect(items.map((i) => i.textContent?.trim())).toEqual(["Set GitHub PR", "Dispute", "Add comment", "Patch verdict", "Assign reviewer"]);
+    expect(items.map((i) => i.textContent?.trim())).toEqual(["Set GitHub PR", "Dispute", "Add comment", "Patch verdict", "Assign reviewer", "Rescore"]);
     items.forEach((item) => expect(item).toBeDisabled());
     expect(screen.getByText(/sign in with google to use these actions/i)).toBeInTheDocument();
   });
@@ -345,7 +345,7 @@ describe("Actions by role", () => {
 
   it("lets a developer set a PR, dispute and comment, but not assign or set a patch verdict", async () => {
     expect(await states(developerContext)).toEqual({
-      "Set GitHub PR": true, Dispute: true, "Add comment": true, "Patch verdict": false, "Assign reviewer": false,
+      "Set GitHub PR": true, Dispute: true, "Add comment": true, "Patch verdict": false, "Assign reviewer": false, Rescore: false,
     });
     expect(screen.getByText(/administrator-only/i)).toBeInTheDocument();
   });
@@ -364,6 +364,52 @@ describe("Actions by role", () => {
     await user.click(screen.getByRole("menuitem", { name: /dispute/i }));
     expect(screen.getByText(/reviews disputes in the disputes section/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /raise dispute/i })).toBeDisabled(); // needs details first
+  });
+});
+
+describe("Severity and rescoring", () => {
+  const unknownDetail = {
+    ...DETAIL,
+    findings: [finding({ severity: "unknown", cvss_score: null })],
+    enrichment: { ...DETAIL.enrichment, severity: "high", cvss_score: 8.4 },
+  };
+  const routes = { "/cves/CVE-2026-1000": unknownDetail, "/triage/comments": { items: [] } };
+
+  it("falls back to the CVE record when the scanned severity is unknown", async () => {
+    vi.stubGlobal("fetch", stubFetch(routes).fn);
+    renderWith(guestContext, <CveDetailPage id="CVE-2026-1000" />);
+    const panel = await screen.findByRole("complementary", { name: /severity/i });
+    expect(within(panel).getByText("High")).toBeInTheDocument();
+    expect(within(panel).getByText("8.4")).toBeInTheDocument();
+  });
+
+  it("shows who rescored the CVE and why", async () => {
+    const rescored = finding({ severity: "critical", cvss_score: 9.1, rescore: { severity: "critical", cvss_score: 9.1, reason: "Reachable from the network", rescored_by: "admin@example.org", rescored_at: "2026-11-07T10:00:00Z" } });
+    vi.stubGlobal("fetch", stubFetch({ ...routes, "/cves/CVE-2026-1000": { ...unknownDetail, findings: [rescored] } }).fn);
+    renderWith(guestContext, <CveDetailPage id="CVE-2026-1000" />);
+    const panel = await screen.findByRole("complementary", { name: /severity/i });
+    expect(within(panel).getByText("Critical")).toBeInTheDocument();
+    expect(within(panel).getByText(/Rescored by admin@example.org/)).toBeInTheDocument();
+    expect(within(panel).getByText(/Reachable from the network/)).toBeInTheDocument();
+  });
+
+  it("lets the administrator rescore with a severity, a score and a reason", async () => {
+    const { fn, calls } = stubFetch({ ...routes, "/cves/CVE-2026-1000/rescore": { rescore: {} } });
+    vi.stubGlobal("fetch", fn);
+    const user = userEvent.setup();
+    renderWith(adminContext, <CveDetailPage id="CVE-2026-1000" />);
+    await screen.findByRole("heading", { level: 1 });
+    await user.click(screen.getAllByRole("button", { name: /^actions for/i })[0]!);
+    await user.click(screen.getByRole("menuitem", { name: /rescore/i }));
+    const save = screen.getByRole("button", { name: /save changes/i });
+    expect(save).toBeDisabled(); // a reason is required
+    await user.type(screen.getByLabelText(/cvss score/i), "8.4");
+    expect(screen.getByRole("combobox", { name: /^severity$/i })).toHaveValue("high"); // suggested from the score
+    await user.type(screen.getByLabelText(/reason for rescoring/i), "CISA-ADP scored it");
+    await user.click(save);
+    const call = calls.find((c) => c.url.pathname.endsWith("/cves/CVE-2026-1000/rescore"))!;
+    expect(call.init?.method).toBe("POST");
+    expect(JSON.parse(String(call.init?.body))).toEqual({ severity: "high", cvss_score: 8.4, reason: "CISA-ADP scored it" });
   });
 });
 

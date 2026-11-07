@@ -29,6 +29,7 @@ Triage tables (typed by people, never overwritten by a scan):
 | `finding_triage` | Per finding: triage status, resolution status, owner, final verdict, patch link, GitHub PR number and link |
 | `finding_comments` | Comments on a finding |
 | `disputes` | Dispute requests: package copied in, reason, status (`pending` / `approved` / `rejected`), who requested and who decided, decision note |
+| `cve_rescores` | One row per rescored CVE: the admin's severity and CVSS score, the reason, who and when, and the first scanned values. Shown instead of the scanned values everywhere (list, filters, summary cards, CVE page) |
 | `assignments` | Findings handed to patch automation, with status and assignee |
 | `assignment_comments` | Comments on an assignment |
 | `cve_cache` | Cached enrichment for a CVE so it is fetched once |

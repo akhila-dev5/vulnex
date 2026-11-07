@@ -89,5 +89,9 @@ Comments, disputes and PR links people saved are not touched.
 
 ## Order of the CVE list
 
+### Where severity comes from
+
+Enrichment asks NVD, MITRE (the CVE Program record), Red Hat and GHSA. The first source with a numeric CVSS score wins, in that order. NVD's own score is preferred, but when NVD has not analysed a CVE yet ("NVD assessment not yet provided") the score from CISA-ADP or the CNA is used instead, from either NVD or the MITRE record. CVEs that still have no severity are enriched first, and `--enrich-limit` defaults to 5000, so a limit can no longer leave them as Unknown. A CVE can still show Unknown if no source has scored it; an administrator can then **Rescore** it.
+
 Affected CVEs come first. A CVE sorts by its most urgent package, then by severity; all rows of one CVE stay together with affected packages first.
 

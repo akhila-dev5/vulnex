@@ -1,6 +1,6 @@
 import type { Finding } from "../api/types";
 
-export type TriageAction = "assign" | "dispute" | "comment" | "patch" | "pr";
+export type TriageAction = "assign" | "dispute" | "comment" | "patch" | "pr" | "rescore";
 
 export type TriageValues = {
   text: string;
@@ -14,7 +14,21 @@ export type TriageValues = {
   prUrl: string;
   assigneeEmail: string;
   assignmentNotes: string;
+  rescoreSeverity: string;
+  rescoreScore: string;
+  rescoreReason: string;
 };
+
+export const RESCORE_SEVERITIES = ["critical", "high", "medium", "low", "none"] as const;
+
+/** The standard CVSS band for a score, used to suggest a severity as the score is typed. */
+export function severityForScore(score: number): string {
+  if (score <= 0) return "none";
+  if (score < 4) return "low";
+  if (score < 7) return "medium";
+  if (score < 9) return "high";
+  return "critical";
+}
 
 export const DEFAULT_ASSIGNEE = "gurujuakhila.dev@gmail.com";
 
@@ -39,10 +53,11 @@ export const ACTION_TITLE: Record<TriageAction, string> = {
   comment: "Add triage comment",
   patch: "Patch availability",
   pr: "Set GitHub pull request",
+  rescore: "Rescore CVE",
 };
 
-/** Assigning and setting a patch verdict stay with the administrator; the rest is open to developers too. */
-export const ADMIN_ONLY_ACTIONS: readonly TriageAction[] = ["assign", "patch"];
+/** Assigning, setting a patch verdict and rescoring stay with the administrator; the rest is open to developers too. */
+export const ADMIN_ONLY_ACTIONS: readonly TriageAction[] = ["assign", "patch", "rescore"];
 
 export function canUseAction(
   action: TriageAction,
@@ -57,6 +72,7 @@ export const ACTION_DONE: Record<TriageAction, string> = {
   comment: "Comment saved",
   patch: "Patch verdict updated",
   pr: "GitHub PR recorded",
+  rescore: "CVE rescored",
 };
 
 /** Form values for an action, pre-filled from what is already recorded on the finding. */
@@ -73,6 +89,9 @@ export function initialValues(f: Finding): TriageValues {
     prUrl: f.triage?.github_pr_url ?? "",
     assigneeEmail: DEFAULT_ASSIGNEE,
     assignmentNotes: "",
+    rescoreSeverity: RESCORE_SEVERITIES.find((s) => s === f.severity) ?? "medium",
+    rescoreScore: f.cvss_score != null ? String(f.cvss_score) : "",
+    rescoreReason: "",
   };
 }
 
@@ -111,6 +130,15 @@ export function buildTriageRequest(
           available_since: v.availableSince.trim(),
         },
       };
+    case "rescore":
+      return {
+        path: `/cves/${encodeURIComponent(f.cve_id)}/rescore`,
+        body: {
+          severity: v.rescoreSeverity,
+          cvss_score: v.rescoreScore.trim() === "" ? null : Number(v.rescoreScore),
+          reason: v.rescoreReason.trim(),
+        },
+      };
     case "pr":
       return { path: "/triage/github-pr", body: { ...ref, number: v.prNumber.trim(), url: v.prUrl.trim() } };
   }
@@ -120,5 +148,10 @@ export function buildTriageRequest(
 export function isSubmittable(action: TriageAction, v: TriageValues): boolean {
   if (action === "comment" || action === "dispute") return v.text.trim() !== "";
   if (action === "pr") return v.prNumber.trim() !== "";
+  if (action === "rescore") {
+    const score = v.rescoreScore.trim();
+    const validScore = score === "" || (Number.isFinite(Number(score)) && Number(score) >= 0 && Number(score) <= 10);
+    return v.rescoreReason.trim() !== "" && validScore;
+  }
   return true;
 }

@@ -9,6 +9,8 @@ import {
   ADMIN_ONLY_ACTIONS,
   canUseAction,
   DISPUTE_REASONS,
+  RESCORE_SEVERITIES,
+  severityForScore,
   buildTriageRequest,
   initialValues,
   isSubmittable,
@@ -162,6 +164,49 @@ export function TriageModal({
           <label>
             Available since
             <input type="date" value={values.availableSince} onChange={(e) => set("availableSince", e.target.value)} />
+          </label>
+        </>
+      )}
+
+      {action === "rescore" && (
+        <>
+          <p className="modal-note">
+            Replaces the severity and CVSS score shown for {finding.cve_id} on every package. The scanned values
+            ({finding.scanned_severity ?? finding.severity}
+            {(finding.scanned_cvss_score ?? finding.cvss_score) != null ? `, ${finding.scanned_cvss_score ?? finding.cvss_score}` : ""}) are kept for reference.
+          </p>
+          <label>
+            CVSS score (0–10)
+            <input
+              value={values.rescoreScore}
+              inputMode="decimal"
+              onChange={(e) => {
+                const text = e.target.value;
+                set("rescoreScore", text);
+                const n = Number(text);
+                if (text.trim() !== "" && Number.isFinite(n) && n >= 0 && n <= 10) set("rescoreSeverity", severityForScore(n));
+              }}
+              placeholder="e.g. 8.4"
+            />
+          </label>
+          <label>
+            Severity
+            <select value={values.rescoreSeverity} onChange={(e) => set("rescoreSeverity", e.target.value)}>
+              {RESCORE_SEVERITIES.map((s) => (
+                <option key={s} value={s}>
+                  {s.charAt(0).toUpperCase() + s.slice(1)}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Reason for rescoring
+            <textarea
+              value={values.rescoreReason}
+              onChange={(e) => set("rescoreReason", e.target.value)}
+              rows={4}
+              placeholder="Why the scanned score is wrong or needs adjusting…"
+            />
           </label>
         </>
       )}

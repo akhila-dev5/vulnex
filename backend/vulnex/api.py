@@ -211,7 +211,7 @@ ROLE_DEVELOPER = config.ROLE_DEVELOPER
 _CAPABILITIES = {
     ROLE_ADMIN: {
         "triage", "dispute", "comment", "scan", "assign", "patch_verdict", "set_pr",
-        "approve_dispute",
+        "approve_dispute", "rescore",
     },
     # Developers: set a GitHub PR, comment and raise disputes. Approving a dispute,
     # assigning and setting a patch verdict stay with the administrator.
@@ -253,6 +253,7 @@ def capabilities(role: str) -> dict:
         "can_set_pr": "set_pr" in granted,
         "can_assign": "assign" in granted,
         "can_approve_dispute": "approve_dispute" in granted,
+        "can_rescore": "rescore" in granted,
     }
 
 
@@ -350,6 +351,12 @@ class DisputeRequest(FindingRef):
 class GithubPRRequest(FindingRef):
     number: str
     url: str = ""
+
+
+class RescoreRequest(BaseModel):
+    severity: str
+    cvss_score: float | None = None
+    reason: str = ""
 
 
 class PatchVerdictRequest(FindingRef):
@@ -607,6 +614,16 @@ def get_findings(
     return cache.cached(key, compute)
 
 
+def _older_than_a_day(stamp: str | None) -> bool:
+    try:
+        then = datetime.fromisoformat((stamp or "").replace("Z", "+00:00"))
+    except ValueError:
+        return True
+    if then.tzinfo is None:
+        then = then.replace(tzinfo=timezone.utc)
+    return (datetime.now(timezone.utc) - then).total_seconds() > 86400
+
+
 @app.get("/api/cves/{cve_id}")
 def get_cve(cve_id: str, enrich: bool = True) -> dict:
     cve_id = cve_id.upper()
@@ -626,13 +643,15 @@ def get_cve(cve_id: str, enrich: bool = True) -> dict:
         raise HTTPException(status_code=404, detail="CVE not found in the current scan")
 
     enrichment = cached
+    if enrich and cached and cached.get("cvss_score") is None and _older_than_a_day(cached.get("_fetched_at")):
+        enrichment = None  # no score last time; the sources may have one by now
     if enrich and enrichment is None:
         try:
             enrichment = enrich_cve(cve_id)
             with db.session() as conn:
                 db.cache_cve(conn, cve_id, enrichment)
         except Exception:  # pragma: no cover - network failures are non-fatal
-            enrichment = None
+            enrichment = cached
 
     with db.session() as conn:
         disputes = db.dispute_index(conn)
@@ -949,6 +968,27 @@ def set_patch_verdict(payload: PatchVerdictRequest, request: Request) -> dict:
             available_since=payload.available_since.strip(),
         )
     return {"triage": record}
+
+
+@app.post("/api/cves/{cve_id}/rescore")
+def rescore_cve(cve_id: str, payload: RescoreRequest, request: Request) -> dict:
+    """Admin-only: replace a CVE's severity and CVSS score, with a reason."""
+    role = require_admin(request)
+    cve_id = cve_id.upper()
+    severity = payload.severity.strip().lower()
+    if severity not in ("critical", "high", "medium", "low", "none"):
+        raise HTTPException(status_code=400, detail="Severity must be critical, high, medium, low or none")
+    score = payload.cvss_score
+    if score is not None and not 0 <= score <= 10:
+        raise HTTPException(status_code=400, detail="CVSS score must be between 0 and 10")
+    reason = payload.reason.strip()
+    if not reason:
+        raise HTTPException(status_code=400, detail="A rescore needs a reason")
+    with db.session() as conn:
+        if not db.findings_for_cve(conn, cve_id):
+            raise HTTPException(status_code=404, detail="CVE not found in the current scan")
+        record = db.set_rescore(conn, cve_id, severity, score, reason, actor_identity(request, role))
+    return {"rescore": record}
 
 
 # -- assignment queue -------------------------------------------------------

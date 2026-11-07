@@ -188,7 +188,7 @@ def build_parser() -> argparse.ArgumentParser:
         p.add_argument("--owner", default=None)
         p.add_argument("--repo", default=None)
         p.add_argument("--db", default=None)
-        p.add_argument("--enrich-limit", type=int, default=400)
+        p.add_argument("--enrich-limit", type=int, default=5000)
         p.add_argument("--include-extended", action="store_true")
         p.add_argument("--no-blobs", action="store_true")
         p.add_argument("--no-corroborate", action="store_true")

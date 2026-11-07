@@ -41,7 +41,7 @@ class ScanOptions:
     verify_blobs: bool = True
     corroborate: bool = True
     enrich: bool = True
-    enrich_limit: int = 400
+    enrich_limit: int = 5000
     commit_files_limit: int = 60
     owner: str | None = None
     repo: str | None = None
@@ -343,11 +343,13 @@ def _tally(findings: list[Finding]) -> dict[str, int]:
 
 def _enrich_findings(findings: list[Finding], options: ScanOptions, emit) -> None:
     """Enrich unique CVEs, then push severity/description back into findings."""
-    unique: dict[str, None] = {}
+    unique: dict[str, bool] = {}
     for f in findings:
         if f.status in ("affected", "unconfirmed"):
-            unique.setdefault(f.cve_id, None)
-    cve_ids = list(unique)[: options.enrich_limit]
+            # True while any finding of this CVE still has no severity.
+            unique[f.cve_id] = unique.get(f.cve_id, False) or f.severity in ("", "unknown")
+    # CVEs with no severity yet go first, so a limit never leaves them as "Unknown".
+    cve_ids = sorted(unique, key=lambda c: not unique[c])[: options.enrich_limit]
     if not cve_ids:
         return
     emit(f"Enriching {len(cve_ids)} CVEs from NVD/MITRE/Red Hat/GHSA")

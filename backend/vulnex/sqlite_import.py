@@ -24,6 +24,7 @@ TRIAGE_TABLES = (
     "finding_triage",
     "finding_comments",
     "disputes",
+    "cve_rescores",
     "cve_cache",
 )
 # Tables with a serial ``id`` whose sequence must follow the imported ids.
