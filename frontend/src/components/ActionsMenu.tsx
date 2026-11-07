@@ -1,6 +1,6 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { AlertTriangle, ChevronDown, GitPullRequest, MessageSquarePlus, ShieldCheck, UserPlus, type LucideIcon } from "lucide-react";
+import { AlertTriangle, ChevronDown, GitPullRequest, MessageSquarePlus, Scale, ShieldCheck, UserPlus, type LucideIcon } from "lucide-react";
 import { useApp } from "../app-context";
 import { ADMIN_ONLY_ACTIONS, canUseAction, type TriageAction } from "../lib/triage";
 
@@ -10,6 +10,7 @@ const ITEMS: Array<{ action: TriageAction; label: string; Icon: LucideIcon }> = 
   { action: "comment", label: "Add comment", Icon: MessageSquarePlus },
   { action: "patch", label: "Patch verdict", Icon: ShieldCheck },
   { action: "assign", label: "Assign reviewer", Icon: UserPlus },
+  { action: "rescore", label: "Rescore", Icon: Scale },
 ];
 
 const GAP = 6; // space between the button and the menu
@@ -17,7 +18,7 @@ const EDGE = 8; // keep the menu this far from the window edge
 
 /**
  * Per-package triage actions. Everyone can open the menu. GitHub PR, comment and dispute are open to
- * developers and the administrator; assign and patch verdict are administrator-only.
+ * developers and the administrator; assign, patch verdict and rescore are administrator-only.
  *
  * The menu is drawn in a portal on <body> with fixed positioning. Rendered inside the table it
  * would be clipped: the table sits in a scroll box (`overflow-x: auto`, which also makes the
@@ -117,7 +118,7 @@ export function ActionsMenu({ label, onAction }: { label: string; onAction: (act
             ))}
             {!canContribute && <p className="menu-note">Sign in with Google to use these actions.</p>}
             {canContribute && !canAdmin && (
-              <p className="menu-note">Assign reviewer and Patch verdict are administrator-only.</p>
+              <p className="menu-note">Assign reviewer, Patch verdict and Rescore are administrator-only.</p>
             )}
           </div>,
           document.body,

@@ -14,8 +14,15 @@ __all__ = ["NVDSource"]
 
 
 def _pick_metric(metrics: dict) -> tuple[str, float | None, str]:
-    for key in ("cvssMetricV31", "cvssMetricV30", "cvssMetricV2"):
-        entries = metrics.get(key) or []
+    """Choose the CVSS score to show.
+
+    NVD often has no analysis of its own yet ("NVD assessment not yet provided")
+    while CISA-ADP or the CNA already scored the CVE; those entries are marked
+    ``Secondary`` and used to be skipped past. Order: CVSS 3.1, 3.0, 4.0, 2.0,
+    and inside each version NVD's own (``Primary``) entry before a secondary one.
+    """
+    for key in ("cvssMetricV31", "cvssMetricV30", "cvssMetricV40", "cvssMetricV2"):
+        entries = sorted(metrics.get(key) or [], key=lambda e: e.get("type") != "Primary")
         for entry in entries:
             data = entry.get("cvssData", {})
             vector = data.get("vectorString", "")

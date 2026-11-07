@@ -62,7 +62,7 @@ def connection_hint(url: str) -> str:
     )
 
 # Tables whose primary key is not an ``id`` column (nothing to RETURN).
-_NO_ID_TABLES = {"cve_cache"}
+_NO_ID_TABLES = {"cve_cache", "cve_rescores"}
 
 _INSERT_RE = re.compile(r"^\s*INSERT\s+INTO\s+([A-Za-z_][A-Za-z0-9_]*)", re.IGNORECASE)
 _LIKE_RE = re.compile(r"\bLIKE\b", re.IGNORECASE)

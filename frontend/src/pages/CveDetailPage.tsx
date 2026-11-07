@@ -97,7 +97,10 @@ export function CveDetailPage({ id }: { id: string }) {
   const openCount = findings.filter((f) => f.status === "affected").length;
   const vector = findings.find((f) => f.cvss_vector)?.cvss_vector;
   const score = findings.find((f) => f.cvss_score != null)?.cvss_score ?? detail?.enrichment?.cvss_score;
-  const severity = findings.find((f) => f.severity)?.severity ?? detail?.enrichment?.severity;
+  // "unknown" is a real string, so skip it: another package, or the CVE record itself, may know the severity.
+  const known = (value?: string | null) => (value && value !== "unknown" ? value : undefined);
+  const severity = findings.map((f) => known(f.severity)).find(Boolean) ?? known(detail?.enrichment?.severity) ?? "unknown";
+  const rescore = findings.find((f) => f.rescore)?.rescore;
   const description = detail?.enrichment?.description || findings.find((f) => f.description)?.description;
   const published = detail?.enrichment?.published;
 
@@ -160,7 +163,14 @@ export function CveDetailPage({ id }: { id: string }) {
                   </dd>
                 </div>
               </dl>
-              <p>Severity comes from the scanned vulnerability data; it is not adjusted by triage.</p>
+              {rescore ? (
+                <p className="rescore-note">
+                  Rescored by {rescore.rescored_by || "an administrator"}
+                  {rescore.rescored_at ? ` on ${formatDate(rescore.rescored_at)}` : ""}. Reason: {rescore.reason}
+                </p>
+              ) : (
+                <p>Severity comes from the scanned vulnerability data; only an administrator can rescore it.</p>
+              )}
             </aside>
           </section>
 

@@ -12,7 +12,7 @@ on:
         default: "3.0,4.0"
       enrich_limit:
         description: "Max CVEs to enrich from NVD/MITRE/Red Hat/GHSA"
-        default: "400"
+        default: "5000"
 
 permissions:
   contents: write
@@ -70,7 +70,7 @@ jobs:
         run: |
           python -m vulnex.cli scan \
             --branches "${VULNEX_BRANCHES}" \
-            --enrich-limit "${{ github.event.inputs.enrich_limit || '400' }}"
+            --enrich-limit "${{ github.event.inputs.enrich_limit || '5000' }}"
 
       # Optional: record the CVEs this scan found fixed in VulnerabilityData (opens a
       # pull request there). Needs a token with write access to that repository, saved

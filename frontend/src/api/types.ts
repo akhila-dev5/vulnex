@@ -86,6 +86,10 @@ export type Finding = {
   azl_fixed_version?: string | null;
   /** When this CVE was first seen on this package (carried across scans). */
   first_seen?: string | null;
+  /** Set when an administrator rescored this CVE; severity and cvss_score then hold the new values. */
+  rescore?: { severity: string; cvss_score: number | null; reason: string; rescored_by: string; rescored_at: string } | null;
+  scanned_severity?: string | null;
+  scanned_cvss_score?: number | null;
   /** "changelog" = named in the spec changelog; "spec-evr" = bounded by the scanned release. */
   azl_fixed_basis?: string | null;
   advisory_id?: string;

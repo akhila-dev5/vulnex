@@ -262,3 +262,4 @@ tr.expanded > td { background: #f9fbfe; padding: 18px; }
 .reason-cell { max-width: 340px; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12.5px; line-height: 1.5; }
 .review-actions { display: flex; gap: 6px; flex-wrap: wrap; }
 .modal-note { margin: 0; padding: 9px 11px; border-radius: 8px; background: #eef3ff; color: #3a4a66; font-size: 12.5px; line-height: 1.5; }
+.rescore-note { font-style: normal; color: #2a3fa8; }

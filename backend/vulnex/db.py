@@ -191,6 +191,19 @@ CREATE TABLE IF NOT EXISTS disputes (
     decision_note TEXT DEFAULT ''
 );
 
+-- An administrator's own severity and CVSS score for a CVE. It overrides the scanned
+-- value everywhere it is shown and is never overwritten by a scan.
+CREATE TABLE IF NOT EXISTS cve_rescores (
+    cve_id TEXT PRIMARY KEY,
+    severity TEXT NOT NULL,
+    cvss_score REAL,
+    reason TEXT NOT NULL,
+    rescored_by TEXT,
+    rescored_at TEXT,
+    original_severity TEXT,
+    original_cvss_score REAL
+);
+
 CREATE TABLE IF NOT EXISTS cve_cache (
     cve_id TEXT PRIMARY KEY,
     payload TEXT,
@@ -438,6 +451,12 @@ def scan_history(conn: sqlite3.Connection, limit: int = 20) -> list[dict]:
     return [dict(r) for r in rows]
 
 
+# A rescored CVE counts under the administrator's severity, not the scanned one.
+_EFFECTIVE_SEVERITY = (
+    "COALESCE((SELECT r.severity FROM cve_rescores r WHERE r.cve_id = findings.cve_id), severity)"
+)
+
+
 def stats(conn: sqlite3.Connection, branch: str | None = None) -> dict:
     """Return dashboard counts scoped to the selected stable branch, if any."""
     if branch not in (None, "", "3.0", "4.0"):
@@ -470,7 +489,7 @@ def stats(conn: sqlite3.Connection, branch: str | None = None) -> dict:
     open_where = f"status = '{config.OPEN_STATUS}'"
     open_total = count(open_where)
     severity = {
-        s: count(f"{open_where} AND severity = '{s}'")
+        s: count(f"{open_where} AND {_EFFECTIVE_SEVERITY} = '{s}'")
         for s in ("critical", "high", "medium", "low", "none", "unknown")
     }
     if branch:
@@ -663,7 +682,7 @@ def list_findings(
         clauses.append("f.status = ?")
         params.append(status)
     if severity:
-        clauses.append("f.severity = ?")
+        clauses.append("COALESCE(rs.severity, f.severity) = ?")
         params.append(severity)
     if package:
         clauses.append("f.package_name = ?")
@@ -684,9 +703,9 @@ def list_findings(
 
     # Triage columns live in a second table (one row per cve+branch+spec), so join
     # it only when a workflow filter needs it. A missing row counts as "open".
-    join = ""
+    join = " LEFT JOIN cve_rescores rs ON rs.cve_id = f.cve_id"
     if triage_status or resolution_status or owner:
-        join = (
+        join += (
             " LEFT JOIN finding_triage t ON t.cve_id = f.cve_id"
             " AND t.branch = COALESCE(f.branch, '') AND t.spec_path = COALESCE(f.spec_path, '')"
         )
@@ -710,8 +729,8 @@ def list_findings(
     ).fetchone()["c"]
     rank = _STATUS_RANK.format(p="f.")
     sev = (
-        "CASE f.severity WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 "
-        "WHEN 'low' THEN 3 WHEN 'none' THEN 4 ELSE 5 END"
+        "CASE COALESCE(rs.severity, f.severity) WHEN 'critical' THEN 0 WHEN 'high' THEN 1 "
+        "WHEN 'medium' THEN 2 WHEN 'low' THEN 3 WHEN 'none' THEN 4 ELSE 5 END"
     )
     # A CVE sorts by its most urgent package, so a CVE that is still affected anywhere
     # leads the list. Among affected CVEs the most recently scanned come first, then by
@@ -723,7 +742,9 @@ def list_findings(
     )
     rows = _rows(
         conn,
-        f"SELECT f.*, MIN({rank}) OVER (PARTITION BY f.cve_id) AS cve_rank, "
+        "SELECT f.*, rs.severity AS rs_severity, rs.cvss_score AS rs_score, rs.reason AS rs_reason, "
+        "rs.rescored_by AS rs_by, rs.rescored_at AS rs_at, "
+        f"MIN({rank}) OVER (PARTITION BY f.cve_id) AS cve_rank, "
         f"MIN({sev}) OVER (PARTITION BY f.cve_id) AS cve_sev, "
         f"MAX(CASE WHEN {rank} = 0 THEN COALESCE(f.first_seen, '') ELSE '' END) "
         "OVER (PARTITION BY f.cve_id) AS cve_new "
@@ -736,7 +757,61 @@ def list_findings(
         f.pop("cve_new", None)
     for f in rows:
         _hydrate_finding(f)
+        severity_o, score_o, reason, by, at = (f.pop(k, None) for k in ("rs_severity", "rs_score", "rs_reason", "rs_by", "rs_at"))
+        if severity_o:
+            _apply_rescore(f, {"severity": severity_o, "cvss_score": score_o, "reason": reason,
+                               "rescored_by": by, "rescored_at": at})
     return rows, total
+
+
+def _apply_rescore(f: dict, rescore: dict) -> dict:
+    """Show the administrator's severity and score on a finding, keeping the scanned ones."""
+    f["scanned_severity"] = f.get("severity")
+    f["scanned_cvss_score"] = f.get("cvss_score")
+    f["severity"] = rescore["severity"]
+    f["cvss_score"] = rescore.get("cvss_score")
+    f["rescore"] = {
+        "severity": rescore["severity"],
+        "cvss_score": rescore.get("cvss_score"),
+        "reason": rescore.get("reason") or "",
+        "rescored_by": rescore.get("rescored_by") or "",
+        "rescored_at": rescore.get("rescored_at") or "",
+    }
+    return f
+
+
+def get_rescore(conn: sqlite3.Connection, cve_id: str) -> dict | None:
+    row = conn.execute("SELECT * FROM cve_rescores WHERE cve_id = ?", (cve_id,)).fetchone()
+    return dict(row) if row else None
+
+
+def set_rescore(
+    conn: sqlite3.Connection, cve_id: str, severity: str, cvss_score: float | None,
+    reason: str, rescored_by: str,
+) -> dict:
+    """Record (or replace) the administrator's score. The first scanned values are kept once."""
+    previous = get_rescore(conn, cve_id)
+    if previous:
+        original_severity, original_score = previous["original_severity"], previous["original_cvss_score"]
+    else:
+        first = conn.execute(
+            "SELECT severity, cvss_score FROM findings WHERE cve_id = ? "
+            "ORDER BY (cvss_score IS NULL), id LIMIT 1", (cve_id,)
+        ).fetchone()
+        original_severity = first["severity"] if first else None
+        original_score = first["cvss_score"] if first else None
+    conn.execute(
+        """
+        INSERT INTO cve_rescores (cve_id, severity, cvss_score, reason, rescored_by, rescored_at,
+                                  original_severity, original_cvss_score)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(cve_id) DO UPDATE SET severity=excluded.severity, cvss_score=excluded.cvss_score,
+            reason=excluded.reason, rescored_by=excluded.rescored_by, rescored_at=excluded.rescored_at
+        """,
+        (cve_id, severity, cvss_score, reason, rescored_by, utcnow(), original_severity, original_score),
+    )
+    conn.commit()
+    return get_rescore(conn, cve_id) or {}
 
 
 def _hydrate_finding(f: dict) -> dict:
@@ -788,13 +863,18 @@ def get_finding(
 
 
 def findings_for_cve(conn: sqlite3.Connection, cve_id: str) -> list[dict]:
-    return [
+    rows = [
         _hydrate_finding(dict(r))
         for r in conn.execute(
             f"SELECT * FROM findings WHERE cve_id = ? ORDER BY {_STATUS_RANK.format(p='')}, "
             "package_name, package_version", (cve_id,)
         ).fetchall()
     ]
+    rescore = get_rescore(conn, cve_id)
+    if rescore:
+        for row in rows:
+            _apply_rescore(row, rescore)
+    return rows
 
 
 def get_patch(
