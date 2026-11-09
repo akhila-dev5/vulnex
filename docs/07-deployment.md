@@ -33,7 +33,7 @@ The free plan **sleeps after about 15 minutes without traffic**; the next reques
 |----------|--------|---------|
 | `DATABASE_URL` | yes for persistence | Supabase **Session pooler** connection string |
 | `VULNEX_ADMIN_EMAIL` | yes | Google account(s) allowed to sign in as admin |
-| `VULNEX_DEVELOPER_EMAILS` | optional | Comma-separated Google emails that may sign in as developers (PR, comments, disputes). Empty means admin-only sign-in |
+| `VULNEX_DEVELOPER_EMAILS` | optional | Comma-separated Google emails that may sign in as developers (PR, comments, disputes). `vulnexsecurityautomation@gmail.com` is always a developer. Empty here means only that account (and the admin) can sign in |
 | `GOOGLE_OAUTH_CLIENT_ID` | yes | From the Google Cloud OAuth client |
 | `GOOGLE_OAUTH_CLIENT_SECRET` | yes | Same |
 | `VULNEX_GOOGLE_REDIRECT` | optional | Override the OAuth callback URL when behind a proxy |

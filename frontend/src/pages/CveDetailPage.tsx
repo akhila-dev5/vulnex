@@ -8,6 +8,7 @@ import { ActionsMenu } from "../components/ActionsMenu";
 import { DeepModal } from "../components/DeepModal";
 import { FindingPanel, type CommentsState } from "../components/FindingPanel";
 import { PatchIcon } from "../components/PatchIcon";
+import { ClaimButton } from "../components/ClaimButton";
 import { StatusPill } from "../components/StatusPill";
 import { TriageModal, type SaveResult } from "../components/TriageModal";
 import { findingKey, ownerOf, resolutionOf, sortForCvePage, specUrl, triageStatusOf } from "../lib/findings";
@@ -16,7 +17,7 @@ import { hrefFor } from "../lib/route";
 import { ACTION_DONE, type TriageAction } from "../lib/triage";
 
 const SOURCE_REPO = { owner: "akhila-dev5", repo: "azurelinux-test" };
-const COLUMNS = 11;
+const COLUMNS = 12;
 
 /**
  * One CVE: its description and source links, then every package it affects.
@@ -201,6 +202,7 @@ export function CveDetailPage({ id }: { id: string }) {
                       <th scope="col">Resolution status</th>
                       <th scope="col">Fixed version</th>
                       <th scope="col">Owner</th>
+                      <th scope="col">Claim</th>
                       <th scope="col">Evidence</th>
                       <th scope="col">Actions</th>
                       <th scope="col"><span className="sr-only">Show details</span></th>
@@ -233,6 +235,7 @@ export function CveDetailPage({ id }: { id: string }) {
                             <td><StatusPill tone={statusTone(resolutionOf(finding))}>{statusLabel(resolutionOf(finding))}</StatusPill></td>
                             <td><AzlFixedVersion finding={finding} /></td>
                             <td>{ownerOf(finding) || "—"}</td>
+                            <td><ClaimButton finding={finding} onChanged={() => setTick((t) => t + 1)} /></td>
                             <td>
                               <button className="btn deep-btn" onClick={() => setDeepTarget(finding)} aria-label={`Deep inspection of ${label}`}>
                                 <FileSearch size={14} aria-hidden="true" /> Deep

@@ -93,7 +93,10 @@ ADMIN_EMAIL_ALLOWLIST = "gurujuakhila.dev@gmail.com"
 # Developers are the Google accounts listed here (comma separated). They can set a GitHub PR,
 # add comments and raise disputes, but cannot approve disputes, assign or set a patch verdict.
 # Anyone not listed (and not the administrator) can still read everything but cannot sign in.
-DEVELOPER_EMAILS = frozenset(
+# Accounts that are always developers (developer privileges only, never admin). More can be
+# added with VULNEX_DEVELOPER_EMAILS.
+BUILT_IN_DEVELOPER_EMAILS = frozenset({"vulnexsecurityautomation@gmail.com"})
+DEVELOPER_EMAILS = BUILT_IN_DEVELOPER_EMAILS | frozenset(
     email.strip().lower()
     for email in os.environ.get("VULNEX_DEVELOPER_EMAILS", "").split(",")
     if email.strip()

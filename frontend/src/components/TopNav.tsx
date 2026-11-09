@@ -10,6 +10,7 @@ const LINKS = [
   { label: "CVEs", route: { name: "cves" } as Route },
   { label: "Packages", route: { name: "packages" } as Route },
   { label: "Disputes", route: { name: "disputes" } as Route },
+  { label: "Workflows", route: { name: "workflows" } as Route },
 ];
 
 export function TopNav({ route }: { route: Route }) {

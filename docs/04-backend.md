@@ -45,6 +45,8 @@ Read endpoints are open to everyone. Write endpoints need the admin session (or,
 | `GET /api/triage`, `/api/triage/comments` | Triage records and comments |
 | `POST /api/triage/comment` · `dispute` · `patch` | Add a comment (dev or admin), raise a dispute (dev or admin; waits for approval), set a patch verdict (admin) |
 | `POST /api/cves/{id}/rescore` | Admin only. Replaces a CVE's severity and CVSS score; needs a severity, an optional score (0 to 10) and a reason |
+| `POST /api/triage/claim` · `release` | Developer or admin. Claim sets the package's owner to the caller (409 if another developer owns it; the admin may take over). Release clears it |
+| `GET /api/workflows` | Developer or admin only (401 otherwise). The packages whose owner is the caller |
 | `GET /api/disputes` | Dispute requests with counts per status (`status`, `search`, `page`) |
 | `POST /api/disputes/{id}/approve` · `reject` | Admin decision. Approve marks the package Disputed; reject leaves it unchanged |
 | `POST /api/triage/github-pr`, `google-pr` | Attach a pull request link |
@@ -56,7 +58,7 @@ Read endpoints are open to everyone. Write endpoints need the admin session (or,
 ## Sign-in and roles
 
 - **Admin** signs in with Google. Only the emails in `VULNEX_ADMIN_EMAIL` are accepted. The server creates a random session token, held in memory, and the browser sends it in the `X-VULNEX-Key` header.
-- **Developer** also signs in with Google, but only emails in `VULNEX_DEVELOPER_EMAILS`. They can comment, set the PR link and raise disputes.
+- **Developer** also signs in with Google, but only emails in `VULNEX_DEVELOPER_EMAILS` or the built-in list in `config.py` (`vulnexsecurityautomation@gmail.com`). They can comment, set the PR link, raise disputes and claim packages.
 - Only the admin can **rescore** a CVE (`rescore` capability, `can_rescore` in `/api/role`).
 - **Automation** sends the static `VULNEX_AUTOMATION_KEY` and may only set the PR link.
 - **Viewer** has no credential and gets read-only access.

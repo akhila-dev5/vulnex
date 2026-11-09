@@ -8,13 +8,14 @@ import { CveLink } from "../components/CveLink";
 import { FilterSidebar } from "../components/FilterSidebar";
 import { Pagination } from "../components/Pagination";
 import { PatchIcon } from "../components/PatchIcon";
+import { ClaimButton } from "../components/ClaimButton";
 import { StatusPill } from "../components/StatusPill";
 import { useScan } from "../hooks/useScan";
 import { addRecent, DEFAULT_FILTERS, loadRecent, PAGE_SIZE, removeRecent, saveRecent, toFindingParams, type Filters } from "../lib/filters";
 import { findingKey, groupByCve, ownerOf, resolutionOf, triageStatusOf } from "../lib/findings";
 import { formatDateTime, formatDayMonth, formatDmy, severityLabel, severityTone, statusLabel, statusTone } from "../lib/labels";
 
-const COLUMNS = 8;
+const COLUMNS = 9;
 
 /**
  * The home page: every CVE found in the scan, grouped by CVE, with the search
@@ -203,6 +204,7 @@ export function CvesPage() {
                     <th scope="col">Resolution status</th>
                     <th scope="col">Fixed version</th>
                     <th scope="col">Owner</th>
+                    <th scope="col">Claim</th>
                   </tr>
                 </thead>
                 {groups.map((group) => (
@@ -242,6 +244,7 @@ export function CvesPage() {
                         <td><StatusPill tone={statusTone(resolutionOf(row))}>{statusLabel(resolutionOf(row))}</StatusPill></td>
                         <td><AzlFixedVersion finding={row} /></td>
                         <td>{ownerOf(row) || "—"}</td>
+                        <td><ClaimButton finding={row} onChanged={reload} /></td>
                       </tr>
                     ))}
                   </tbody>

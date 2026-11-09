@@ -5,6 +5,7 @@ import { AppContext, type AppContextValue } from "../app-context";
 import { TopNav } from "../components/TopNav";
 import { ADMIN_ROLE, DETAIL, OTHER_CVE, SECOND, adminContext, developerContext, finding, guestContext, stubFetch } from "../test/fixtures";
 import { DisputesPage } from "./DisputesPage";
+import { WorkflowsPage } from "./WorkflowsPage";
 import { CveDetailPage } from "./CveDetailPage";
 import { CvesPage } from "./CvesPage";
 
@@ -24,10 +25,10 @@ beforeEach(() => vi.unstubAllGlobals());
 afterEach(() => vi.unstubAllGlobals());
 
 describe("top navigation", () => {
-  it("offers CVEs, Packages and Disputes, in that order", () => {
+  it("offers CVEs, Packages, Disputes and Workflows, in that order", () => {
     renderWith(guestContext, <TopNav route={{ name: "cves" }} />);
     const nav = screen.getByRole("navigation", { name: /main navigation/i });
-    expect(within(nav).getAllByRole("link").map((a) => a.textContent)).toEqual(["CVEs", "Packages", "Disputes"]);
+    expect(within(nav).getAllByRole("link").map((a) => a.textContent)).toEqual(["CVEs", "Packages", "Disputes", "Workflows"]);
     expect(within(nav).getByRole("link", { name: "CVEs" })).toHaveAttribute("aria-current", "page");
   });
   it("keeps CVEs highlighted on a CVE page", () => {
@@ -410,6 +411,56 @@ describe("Severity and rescoring", () => {
     const call = calls.find((c) => c.url.pathname.endsWith("/cves/CVE-2026-1000/rescore"))!;
     expect(call.init?.method).toBe("POST");
     expect(JSON.parse(String(call.init?.body))).toEqual({ severity: "high", cvss_score: 8.4, reason: "CISA-ADP scored it" });
+  });
+});
+
+describe("Claim and Workflows", () => {
+  const me = { ...developerContext, roleInfo: { ...developerContext.roleInfo, identity: { email: "dev@example.org" } } };
+  const listed = (triage: Record<string, string> | undefined) => ({ "/findings": { items: [finding({ triage })], total: 1 }, "/stats": {} });
+
+  it("shows a read-only Claim button to visitors", async () => {
+    const { fn, calls } = stubFetch(listed(undefined));
+    vi.stubGlobal("fetch", fn);
+    renderWith(guestContext, <CvesPage />);
+    const button = await screen.findByRole("button", { name: /claim rabbitmq-server .*developers only/i });
+    expect(button).toBeDisabled();
+    await userEvent.click(button);
+    expect(calls.some((c) => c.url.pathname.includes("/triage/claim"))).toBe(false);
+  });
+
+  it("lets a developer claim a package, which assigns it to their account", async () => {
+    const { fn, calls } = stubFetch({ ...listed(undefined), "/triage/claim": { triage: {} } });
+    vi.stubGlobal("fetch", fn);
+    renderWith(me, <CvesPage />);
+    await userEvent.click(await screen.findByRole("button", { name: /^claim rabbitmq-server/i }));
+    const call = calls.find((c) => c.url.pathname.endsWith("/triage/claim"))!;
+    expect(call.init?.method).toBe("POST");
+    expect(JSON.parse(String(call.init?.body))).toMatchObject({ cve_id: "CVE-2026-1000" });
+  });
+
+  it("disables Claim for a developer when someone else owns the package, and offers Release for their own", async () => {
+    vi.stubGlobal("fetch", stubFetch(listed({ owner: "other@example.org" })).fn);
+    const first = renderWith(me, <CvesPage />);
+    expect(await screen.findByRole("button", { name: /claimed by other@example.org/i })).toBeDisabled();
+    first.unmount();
+    vi.stubGlobal("fetch", stubFetch(listed({ owner: "dev@example.org" })).fn);
+    renderWith(me, <CvesPage />);
+    expect(await screen.findByRole("button", { name: /^release rabbitmq-server/i })).toBeEnabled();
+  });
+
+  it("tells visitors that only developers can see Workflows, without asking the server", () => {
+    const { fn, calls } = stubFetch({});
+    vi.stubGlobal("fetch", fn);
+    renderWith(guestContext, <WorkflowsPage />);
+    expect(screen.getByText(/only developers can see workflows/i)).toBeInTheDocument();
+    expect(calls).toHaveLength(0);
+  });
+
+  it("lists the packages a developer claimed", async () => {
+    vi.stubGlobal("fetch", stubFetch({ "/workflows": { items: [finding({ triage: { owner: "dev@example.org" } })], total: 1, owner: "dev@example.org" } }).fn);
+    renderWith(me, <WorkflowsPage />);
+    expect(await screen.findByText("rabbitmq-server")).toBeInTheDocument();
+    expect(screen.getByText(/1 package claimed by dev@example.org/)).toBeInTheDocument();
   });
 });
 

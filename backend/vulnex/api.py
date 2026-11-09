@@ -211,11 +211,11 @@ ROLE_DEVELOPER = config.ROLE_DEVELOPER
 _CAPABILITIES = {
     ROLE_ADMIN: {
         "triage", "dispute", "comment", "scan", "assign", "patch_verdict", "set_pr",
-        "approve_dispute", "rescore",
+        "approve_dispute", "rescore", "claim",
     },
     # Developers: set a GitHub PR, comment and raise disputes. Approving a dispute,
     # assigning and setting a patch verdict stay with the administrator.
-    ROLE_DEVELOPER: {"comment", "dispute", "set_pr"},
+    ROLE_DEVELOPER: {"comment", "dispute", "set_pr", "claim"},
     ROLE_AUTOMATION: {"set_pr"},
     ROLE_VIEWER: set(),
 }
@@ -254,6 +254,7 @@ def capabilities(role: str) -> dict:
         "can_assign": "assign" in granted,
         "can_approve_dispute": "approve_dispute" in granted,
         "can_rescore": "rescore" in granted,
+        "can_claim": "claim" in granted,
     }
 
 
@@ -968,6 +969,51 @@ def set_patch_verdict(payload: PatchVerdictRequest, request: Request) -> dict:
             available_since=payload.available_since.strip(),
         )
     return {"triage": record}
+
+
+def require_claimer(request: Request) -> tuple[str, str]:
+    """(role, email) of a signed-in developer or administrator; anyone else gets 401."""
+    role = resolve_role(request)
+    if "claim" not in _CAPABILITIES.get(role, set()):
+        raise HTTPException(status_code=401, detail="Only developers and the administrator can claim or track CVEs.")
+    return role, actor_identity(request, role).strip().lower()
+
+
+@app.post("/api/triage/claim")
+def claim_finding(payload: FindingRef, request: Request) -> dict:
+    """Assign a package's CVE to the signed-in account. Developers and the administrator only."""
+    role, me = require_claimer(request)
+    cve_id = payload.cve_id.upper()
+    with db.session() as conn:
+        current = ((db.get_triage(conn, cve_id, payload.branch, payload.spec_path) or {}).get("owner") or "").strip()
+        if current and current.lower() != me and role != ROLE_ADMIN:
+            raise HTTPException(status_code=409, detail=f"Already claimed by {current}.")
+        record = db.upsert_triage(conn, cve_id, payload.branch, payload.spec_path, owner=me)
+    return {"triage": record}
+
+
+@app.post("/api/triage/release")
+def release_finding(payload: FindingRef, request: Request) -> dict:
+    """Give a claimed package back. Only its owner, or the administrator, can."""
+    role, me = require_claimer(request)
+    cve_id = payload.cve_id.upper()
+    with db.session() as conn:
+        current = ((db.get_triage(conn, cve_id, payload.branch, payload.spec_path) or {}).get("owner") or "").strip()
+        if current and current.lower() != me and role != ROLE_ADMIN:
+            raise HTTPException(status_code=409, detail=f"Claimed by {current}; only they or the administrator can release it.")
+        record = db.upsert_triage(conn, cve_id, payload.branch, payload.spec_path, owner="")
+    return {"triage": record}
+
+
+@app.get("/api/workflows")
+def get_workflows(request: Request) -> dict:
+    """The packages claimed by the signed-in account. Developers and the administrator only."""
+    _, me = require_claimer(request)
+    with db.session() as conn:
+        rows, _ = db.list_findings(conn, owner=me, limit=1_000_000, offset=0)
+        _decorate_findings(conn, rows, slim=True)
+    rows = [r for r in rows if ((r.get("triage") or {}).get("owner") or "").strip().lower() == me]
+    return {"items": rows, "total": len(rows), "owner": me}
 
 
 @app.post("/api/cves/{cve_id}/rescore")
