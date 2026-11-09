@@ -456,11 +456,23 @@ describe("Claim and Workflows", () => {
     expect(calls).toHaveLength(0);
   });
 
-  it("lists the packages a developer claimed", async () => {
-    vi.stubGlobal("fetch", stubFetch({ "/workflows": { items: [finding({ triage: { owner: "dev@example.org" } })], total: 1, owner: "dev@example.org" } }).fn);
+  it("shows the signed-in developer first, then the others alphabetically", async () => {
+    const mk = (owner: string, name: string, via: "claimed" | "assigned") => ({ ...finding({ package_name: name, triage: { owner } }), held_via: via });
+    const groups = [
+      { owner: "dev@example.org", total: 1, items: [mk("dev@example.org", "rabbitmq-server", "claimed")] },
+      { owner: "alpha@example.org", total: 1, items: [mk("alpha@example.org", "curl", "assigned")] },
+      { owner: "zed@example.org", total: 0, items: [] },
+    ];
+    vi.stubGlobal("fetch", stubFetch({ "/workflows": { me: "dev@example.org", total: 2, groups } }).fn);
     renderWith(me, <WorkflowsPage />);
     expect(await screen.findByText("rabbitmq-server")).toBeInTheDocument();
-    expect(screen.getByText(/1 package claimed by dev@example.org/)).toBeInTheDocument();
+    const headings = screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent ?? "");
+    expect(headings[0]).toMatch(/^dev@example.org \(you\)/);
+    expect(headings[1]).toMatch(/^alpha@example.org/);
+    expect(headings[2]).toMatch(/^zed@example.org/);
+    expect(screen.getByText("curl")).toBeInTheDocument();
+    expect(screen.getByText("Assigned")).toBeInTheDocument();
+    expect(screen.getByText(/2 packages held across 3 developers/)).toBeInTheDocument();
   });
 });
 
