@@ -1007,13 +1007,32 @@ def release_finding(payload: FindingRef, request: Request) -> dict:
 
 @app.get("/api/workflows")
 def get_workflows(request: Request) -> dict:
-    """The packages claimed by the signed-in account. Developers and the administrator only."""
+    """Every developer's packages, grouped by owner. Developers and the administrator only.
+
+    A package belongs to whoever the administrator assigned it to, otherwise to whoever
+    claimed it (the same rule the CVE pages use). The signed-in account is always the
+    first group, even when empty; the other owners follow in alphabetical order.
+    """
     _, me = require_claimer(request)
     with db.session() as conn:
-        rows, _ = db.list_findings(conn, owner=me, limit=1_000_000, offset=0)
+        rows, _ = db.list_findings(conn, limit=1_000_000, offset=0)
         _decorate_findings(conn, rows, slim=True)
-    rows = [r for r in rows if ((r.get("triage") or {}).get("owner") or "").strip().lower() == me]
-    return {"items": rows, "total": len(rows), "owner": me}
+    groups: dict[str, list[dict]] = {me: []}
+    for row in rows:
+        assigned = ((row.get("assignment") or {}).get("assignee_email") or "").strip().lower()
+        claimed = ((row.get("triage") or {}).get("owner") or "").strip().lower()
+        owner = assigned or claimed
+        if not owner:
+            continue
+        row["held_via"] = "assigned" if assigned else "claimed"
+        groups.setdefault(owner, []).append(row)
+    ordered = [me] + sorted(email for email in groups if email != me)
+    return {
+        "me": me,
+        "owner": me,
+        "total": sum(len(items) for items in groups.values()),
+        "groups": [{"owner": email, "total": len(groups[email]), "items": groups[email]} for email in ordered],
+    }
 
 
 @app.post("/api/cves/{cve_id}/rescore")

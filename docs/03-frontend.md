@@ -11,7 +11,7 @@ There are five pages, chosen by the part of the URL after `#`.
 | `#/` | CVEs (`CvesPage.tsx`) | Filter sidebar, four summary cards, findings grouped by CVE. Each CVE has a chevron that opens its package rows (collapsed by default, plus Expand all / Collapse all). Columns include **Scanned**, the date the finding first appeared |
 | `#/packages` | Packages (`PackagesPage.tsx`) | Every scanned package and its version |
 | `#/disputes` | Disputes (`DisputesPage.tsx`) | Every dispute request in Pending / Approved / Rejected tabs; the admin approves or rejects here |
-| `#/workflows` | Workflows (`WorkflowsPage.tsx`) | The packages the signed-in developer or admin has claimed. Visitors see a message that only developers can see it |
+| `#/workflows` | Workflows (`WorkflowsPage.tsx`) | Every developer's packages (claimed or assigned), one section per email: the signed-in account first, then the rest alphabetically. Visitors see a message that only developers can see it |
 | `#/cve/<id>` | CVE detail (`CveDetailPage.tsx`) | The CVE, severity box, tracker links, and a table of every affected package |
 
 ![CVE detail page](images/cve-detail.png)

@@ -46,7 +46,7 @@ Read endpoints are open to everyone. Write endpoints need the admin session (or,
 | `POST /api/triage/comment` · `dispute` · `patch` | Add a comment (dev or admin), raise a dispute (dev or admin; waits for approval), set a patch verdict (admin) |
 | `POST /api/cves/{id}/rescore` | Admin only. Replaces a CVE's severity and CVSS score; needs a severity, an optional score (0 to 10) and a reason |
 | `POST /api/triage/claim` · `release` | Developer or admin. Claim sets the package's owner to the caller (409 if another developer owns it; the admin may take over). Release clears it |
-| `GET /api/workflows` | Developer or admin only (401 otherwise). The packages whose owner is the caller |
+| `GET /api/workflows` | Developer or admin only (401 otherwise). Every developer's packages grouped by owner (assignee, else claimer): `groups[]` with the caller first, then alphabetical; each item has `held_via` = `assigned` or `claimed` |
 | `GET /api/disputes` | Dispute requests with counts per status (`status`, `search`, `page`) |
 | `POST /api/disputes/{id}/approve` · `reject` | Admin decision. Approve marks the package Disputed; reject leaves it unchanged |
 | `POST /api/triage/github-pr`, `google-pr` | Attach a pull request link |

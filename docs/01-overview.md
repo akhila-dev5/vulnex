@@ -43,7 +43,7 @@ A simple scanner says "package X is older than the upstream fix, so it is vulner
 | **Upstream fixed version** | The version the original project fixed it in. Shown only in the Deep view |
 | **Dispute** | A request to say "this finding is wrong". A developer raises it from Actions; the admin approves or rejects it on the Disputes page. Approval marks the package **Disputed** |
 | **Rescore** | An administrator's own severity and CVSS score for a CVE, with a reason. It replaces the scanned values on screen |
-| **Claim / Workflows** | Claim assigns a package to your Google account. The Workflows page lists what you claimed |
+| **Claim / Workflows** | Claim assigns a package to your Google account. The Workflows page lists every developer's packages, claimed or admin-assigned: you first, then the others by email |
 | **Deep** | A pop-up with the source files the CVE touches and the backport patches |
 | **Snapshot** | The scan result saved as `data/vulnex.db` and refreshed daily |
 

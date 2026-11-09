@@ -9,11 +9,13 @@ import { findingKey, resolutionOf, triageStatusOf } from "../lib/findings";
 import { formatDayMonth, statusLabel, statusTone } from "../lib/labels";
 import { hrefFor } from "../lib/route";
 
-type WorkflowList = { items: Finding[]; total: number; owner: string };
+type WorkflowItem = Finding & { held_via?: "assigned" | "claimed" };
+type WorkflowGroup = { owner: string; total: number; items: WorkflowItem[] };
+type WorkflowList = { me: string; total: number; groups: WorkflowGroup[] };
 
 /**
- * The packages the signed-in developer or administrator has claimed.
- * Visitors are told it is for developers; the server refuses them as well.
+ * Every developer's packages, claimed or assigned by the administrator: the signed-in
+ * account first, then everyone else alphabetically. Visitors are told it is for developers; the server refuses them as well.
  */
 export function WorkflowsPage() {
   const { token, canContribute } = useApp();
@@ -48,13 +50,13 @@ export function WorkflowsPage() {
         <div className="empty-state workflows-locked" role="status">
           <Lock size={26} aria-hidden="true" />
           <strong>Only developers can see Workflows</strong>
-          <span>Sign in with a developer or administrator Google account to see the CVEs you have claimed.</span>
+          <span>Sign in with a developer or administrator Google account to see the CVEs each developer holds.</span>
         </div>
       </main>
     );
   }
 
-  const rows = data?.items ?? [];
+  const groups = data?.groups ?? [];
   return (
     <main className="cve-page">
       <div className="page-head">
@@ -62,8 +64,8 @@ export function WorkflowsPage() {
           <h1>Workflows</h1>
           <p>
             {data
-              ? `${data.total} package${data.total === 1 ? "" : "s"} claimed by ${data.owner}. Claim a package from the CVEs page to track it here.`
-              : "The packages you have claimed."}
+              ? `${data.total} package${data.total === 1 ? "" : "s"} held across ${groups.length} developer${groups.length === 1 ? "" : "s"}, claimed or assigned. Claim a package from the CVEs page to track it here.`
+              : "The packages each developer holds."}
           </p>
         </div>
         <button className="icon-btn" onClick={reload} aria-label="Refresh workflows" disabled={busy}>
@@ -77,49 +79,64 @@ export function WorkflowsPage() {
         </div>
       )}
 
-      <section className="table-card">
-        <div className={busy ? "table-scroll dim" : "table-scroll"}>
-          <table className="cve-table">
-            <thead>
-              <tr>
-                <th>CVE</th>
-                <th>Package</th>
-                <th>Scanned</th>
-                <th>Branch</th>
-                <th>Triage status</th>
-                <th>Resolution status</th>
-                <th>Claim</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row) => (
-                <tr key={findingKey(row)}>
-                  <td>
-                    <a className="cve-link" href={hrefFor({ name: "cve", id: row.cve_id })}>
-                      {row.cve_id}
-                    </a>
-                  </td>
-                  <td>
-                    <strong>{row.package_name}</strong>
-                    <small>{row.package_version}</small>
-                  </td>
-                  <td>{formatDayMonth(row.first_seen)}</td>
-                  <td><code>{row.branch}</code></td>
-                  <td><StatusPill tone={statusTone(triageStatusOf(row))}>{statusLabel(triageStatusOf(row))}</StatusPill></td>
-                  <td><StatusPill tone={statusTone(resolutionOf(row))}>{statusLabel(resolutionOf(row))}</StatusPill></td>
-                  <td><ClaimButton finding={row} onChanged={reload} /></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {data && rows.length === 0 && !busy && !error && (
-            <div className="empty-state">
-              <strong>You have not claimed any packages yet</strong>
-              <span>Use the Claim button next to a package on the CVEs page.</span>
+      {groups.map((group) => {
+        const mine = group.owner === data?.me;
+        return (
+          <section className="table-card" key={group.owner} aria-label={`Packages held by ${group.owner}`}>
+            <h2 className="workflow-owner">
+              {group.owner}
+              {mine && " (you)"}
+              <small> · {group.total} package{group.total === 1 ? "" : "s"}</small>
+            </h2>
+            <div className={busy ? "table-scroll dim" : "table-scroll"}>
+              {group.items.length > 0 ? (
+                <table className="cve-table">
+                  <thead>
+                    <tr>
+                      <th>CVE</th>
+                      <th>Package</th>
+                      <th>Scanned</th>
+                      <th>Branch</th>
+                      <th>Held</th>
+                      <th>Triage status</th>
+                      <th>Resolution status</th>
+                      <th>Claim</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {group.items.map((row) => (
+                      <tr key={findingKey(row)}>
+                        <td>
+                          <a className="cve-link" href={hrefFor({ name: "cve", id: row.cve_id })}>
+                            {row.cve_id}
+                          </a>
+                        </td>
+                        <td>
+                          <strong>{row.package_name}</strong>
+                          <small>{row.package_version}</small>
+                        </td>
+                        <td>{formatDayMonth(row.first_seen)}</td>
+                        <td><code>{row.branch}</code></td>
+                        <td>{row.held_via === "assigned" ? "Assigned" : "Claimed"}</td>
+                        <td><StatusPill tone={statusTone(triageStatusOf(row))}>{statusLabel(triageStatusOf(row))}</StatusPill></td>
+                        <td><StatusPill tone={statusTone(resolutionOf(row))}>{statusLabel(resolutionOf(row))}</StatusPill></td>
+                        <td><ClaimButton finding={row} onChanged={reload} /></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                !busy && (
+                  <div className="empty-state">
+                    <strong>{mine ? "You have not claimed any packages yet" : "No packages held"}</strong>
+                    {mine && <span>Use the Claim button next to a package on the CVEs page.</span>}
+                  </div>
+                )
+              )}
             </div>
-          )}
-        </div>
-      </section>
+          </section>
+        );
+      })}
     </main>
   );
 }
