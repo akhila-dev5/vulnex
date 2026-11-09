@@ -1,4 +1,4 @@
-// Tiny hash router. Four pages: the CVE list, the package list, the disputes and one CVE.
+// Tiny hash router. Five pages: the CVE list, the package list, the disputes, the workflows and one CVE.
 // Hash routes keep the site a plain static bundle (no server rewrite rules needed)
 // and make every CVE page a shareable, bookmarkable URL.
 
@@ -6,6 +6,7 @@ export type Route =
   | { name: "cves" }
   | { name: "packages" }
   | { name: "disputes" }
+  | { name: "workflows" }
   | { name: "cve"; id: string }
   | { name: "notfound" };
 
@@ -18,6 +19,7 @@ export function parseRoute(hash: string): Route {
   if (path === "" || path === "/" || path === "/cves") return { name: "cves" };
   if (path === "/packages") return { name: "packages" };
   if (path === "/disputes") return { name: "disputes" };
+  if (path === "/workflows") return { name: "workflows" };
   const match = path.match(/^\/cve\/([^/]+)$/);
   if (match?.[1]) {
     let id = match[1];
@@ -39,6 +41,8 @@ export function hrefFor(route: Route): string {
       return "#/packages";
     case "disputes":
       return "#/disputes";
+    case "workflows":
+      return "#/workflows";
     case "cve":
       return `#/cve/${encodeURIComponent(route.id)}`;
     default:

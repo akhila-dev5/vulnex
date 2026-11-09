@@ -21,7 +21,7 @@ A simple scanner says "package X is older than the upstream fix, so it is vulner
 | Role | How they sign in | What they can do |
 |------|------------------|------------------|
 | Guest (viewer) | Nobody, just open the site | Read everything |
-| Developer | Google sign-in, emails listed in `VULNEX_DEVELOPER_EMAILS` | Set the GitHub PR, add comments, raise disputes |
+| Developer | Google sign-in, emails listed in `VULNEX_DEVELOPER_EMAILS` (plus the built-in `vulnexsecurityautomation@gmail.com`) | Set the GitHub PR, add comments, raise disputes, claim packages and see Workflows |
 | Admin | Google sign-in, only the allow-listed email | Everything a developer can, plus approve or reject disputes, assign, set patch verdict, rescore a CVE, run a scan |
 | Automation | A static key sent in a header | Only set the pull request link |
 
@@ -43,6 +43,7 @@ A simple scanner says "package X is older than the upstream fix, so it is vulner
 | **Upstream fixed version** | The version the original project fixed it in. Shown only in the Deep view |
 | **Dispute** | A request to say "this finding is wrong". A developer raises it from Actions; the admin approves or rejects it on the Disputes page. Approval marks the package **Disputed** |
 | **Rescore** | An administrator's own severity and CVSS score for a CVE, with a reason. It replaces the scanned values on screen |
+| **Claim / Workflows** | Claim assigns a package to your Google account. The Workflows page lists what you claimed |
 | **Deep** | A pop-up with the source files the CVE touches and the backport patches |
 | **Snapshot** | The scan result saved as `data/vulnex.db` and refreshed daily |
 

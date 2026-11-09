@@ -4,13 +4,14 @@ The frontend is a **React 18 + TypeScript** single-page app built with **Vite 6*
 
 ## Pages
 
-There are four pages, chosen by the part of the URL after `#`.
+There are five pages, chosen by the part of the URL after `#`.
 
 | URL | Page | Shows |
 |-----|------|-------|
 | `#/` | CVEs (`CvesPage.tsx`) | Filter sidebar, four summary cards, findings grouped by CVE. Each CVE has a chevron that opens its package rows (collapsed by default, plus Expand all / Collapse all). Columns include **Scanned**, the date the finding first appeared |
 | `#/packages` | Packages (`PackagesPage.tsx`) | Every scanned package and its version |
 | `#/disputes` | Disputes (`DisputesPage.tsx`) | Every dispute request in Pending / Approved / Rejected tabs; the admin approves or rejects here |
+| `#/workflows` | Workflows (`WorkflowsPage.tsx`) | The packages the signed-in developer or admin has claimed. Visitors see a message that only developers can see it |
 | `#/cve/<id>` | CVE detail (`CveDetailPage.tsx`) | The CVE, severity box, tracker links, and a table of every affected package |
 
 ![CVE detail page](images/cve-detail.png)
@@ -18,6 +19,8 @@ There are four pages, chosen by the part of the URL after `#`.
 Each row on the CVE detail page has a **Deep** button, an **Actions** menu and an arrow to open that package's panel. In the menu, **Set GitHub PR**, **Dispute** and **Add comment** work for developers and the admin; **Patch verdict**, **Assign reviewer** and **Rescore** are admin-only (`canUseAction` in `lib/triage.ts`).
 
 **Rescore** (admin) opens a form with a CVSS score, a severity (suggested from the score) and a required reason. The Severity box on the CVE page then shows the new values and a note with who rescored it and why; the scanned values are kept.
+
+**Claim** (`ClaimButton.tsx`): every package row has a Claim button. It assigns the package to the signed-in Google account (the Owner column). Visitors see it disabled. A package claimed by someone else shows a disabled "Claimed" for developers; the owner sees Release, and the admin sees Take over.
 
 A dispute goes: developer raises it → it appears under **Disputes** as Pending (the package shows "Pending dispute") → the admin approves → the package's resolution status becomes **Disputed** and the reason shows under the package ("Approved dispute"). A rejected dispute changes nothing on the package.
 

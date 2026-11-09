@@ -8,6 +8,7 @@ import { CveDetailPage } from "./pages/CveDetailPage";
 import { CvesPage } from "./pages/CvesPage";
 import { DisputesPage } from "./pages/DisputesPage";
 import { PackagesPage } from "./pages/PackagesPage";
+import { WorkflowsPage } from "./pages/WorkflowsPage";
 import { hrefFor } from "./lib/route";
 
 function NotFound() {
@@ -50,6 +51,8 @@ function App() {
           <PackagesPage />
         ) : route.name === "disputes" ? (
           <DisputesPage />
+        ) : route.name === "workflows" ? (
+          <WorkflowsPage />
         ) : route.name === "cves" ? (
           <CvesPage />
         ) : (

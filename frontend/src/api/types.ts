@@ -13,6 +13,7 @@ export type RoleInfo = {
   can_set_pr?: boolean;
   can_assign?: boolean;
   can_approve_dispute?: boolean;
+  can_claim?: boolean;
 };
 
 export type DisputeStatus = "pending" | "approved" | "rejected";
