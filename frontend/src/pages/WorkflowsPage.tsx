@@ -3,7 +3,7 @@ import { AlertCircle, Lock, RefreshCw } from "lucide-react";
 import { isAbort, messageOf, request } from "../api/client";
 import type { Finding } from "../api/types";
 import { useApp } from "../app-context";
-import { ClaimButton } from "../components/ClaimButton";
+import { ReleaseButton } from "../components/ReleaseButton";
 import { StatusPill } from "../components/StatusPill";
 import { findingKey, resolutionOf, triageStatusOf } from "../lib/findings";
 import { formatDayMonth, statusLabel, statusTone } from "../lib/labels";
@@ -64,7 +64,7 @@ export function WorkflowsPage() {
           <h1>Workflows</h1>
           <p>
             {data
-              ? `${data.total} package${data.total === 1 ? "" : "s"} held across ${groups.length} developer${groups.length === 1 ? "" : "s"}, claimed or assigned. Claim a package from the CVEs page to track it here.`
+              ? `${data.total} package${data.total === 1 ? "" : "s"} held across ${groups.length} developer${groups.length === 1 ? "" : "s"}, claimed or assigned. Claim a package from the CVEs page to track it here, and Release gives one back.`
               : "The packages each developer holds."}
           </p>
         </div>
@@ -100,7 +100,7 @@ export function WorkflowsPage() {
                       <th>Held</th>
                       <th>Triage status</th>
                       <th>Resolution status</th>
-                      <th>Claim</th>
+                      <th>Action</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -120,7 +120,7 @@ export function WorkflowsPage() {
                         <td>{row.held_via === "assigned" ? "Assigned" : "Claimed"}</td>
                         <td><StatusPill tone={statusTone(triageStatusOf(row))}>{statusLabel(triageStatusOf(row))}</StatusPill></td>
                         <td><StatusPill tone={statusTone(resolutionOf(row))}>{statusLabel(resolutionOf(row))}</StatusPill></td>
-                        <td><ClaimButton finding={row} onChanged={reload} /></td>
+                        <td><ReleaseButton finding={row} holder={group.owner} onChanged={reload} /></td>
                       </tr>
                     ))}
                   </tbody>

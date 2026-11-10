@@ -961,6 +961,25 @@ def create_assignment(
     return dict(row)
 
 
+def get_assignee(conn: sqlite3.Connection, cve_id: str, package_name: str) -> str:
+    """Who the administrator assigned this package's CVE to ('' when nobody)."""
+    row = conn.execute(
+        "SELECT assignee_email FROM assignments WHERE cve_id = ? AND package_name = ? "
+        "AND COALESCE(assignee_email, '') != '' ORDER BY id DESC LIMIT 1",
+        (cve_id, package_name),
+    ).fetchone()
+    return (row["assignee_email"] if row else "") or ""
+
+
+def clear_assignee(conn: sqlite3.Connection, cve_id: str, package_name: str) -> None:
+    """Take the assignee off; the queue row and its comments stay."""
+    conn.execute(
+        "UPDATE assignments SET assignee_email = '', updated_at = ? WHERE cve_id = ? AND package_name = ?",
+        (utcnow(), cve_id, package_name),
+    )
+    conn.commit()
+
+
 def list_assignments(conn: sqlite3.Connection) -> list[dict]:
     """Queue rows with their triage comments attached in one grouped query."""
     rows = _rows(conn, "SELECT * FROM assignments ORDER BY created_at DESC")

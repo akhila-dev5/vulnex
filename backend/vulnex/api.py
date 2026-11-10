@@ -355,6 +355,10 @@ class GithubPRRequest(FindingRef):
     url: str = ""
 
 
+class ReleaseRequest(FindingRef):
+    package_name: str = ""  # lets Release also clear an administrator's assignment
+
+
 class AutomationRequest(BaseModel):
     package_name: str
     branch: str = ""
@@ -1003,15 +1007,20 @@ def claim_finding(payload: FindingRef, request: Request) -> dict:
 
 
 @app.post("/api/triage/release")
-def release_finding(payload: FindingRef, request: Request) -> dict:
-    """Give a claimed package back. Only its owner, or the administrator, can."""
+def release_finding(payload: ReleaseRequest, request: Request) -> dict:
+    """Give a package back, whether it was claimed or assigned. Only its holder, or the administrator, can."""
     role, me = require_claimer(request)
     cve_id = payload.cve_id.upper()
     with db.session() as conn:
-        current = ((db.get_triage(conn, cve_id, payload.branch, payload.spec_path) or {}).get("owner") or "").strip()
-        if current and current.lower() != me and role != ROLE_ADMIN:
-            raise HTTPException(status_code=409, detail=f"Claimed by {current}; only they or the administrator can release it.")
+        claimed = ((db.get_triage(conn, cve_id, payload.branch, payload.spec_path) or {}).get("owner") or "").strip()
+        assigned = db.get_assignee(conn, cve_id, payload.package_name).strip() if payload.package_name else ""
+        for holder in (assigned, claimed):
+            if holder and holder.lower() != me and role != ROLE_ADMIN:
+                raise HTTPException(status_code=409, detail=f"Held by {holder}; only they or the administrator can release it.")
+        if assigned:
+            db.clear_assignee(conn, cve_id, payload.package_name)
         record = db.upsert_triage(conn, cve_id, payload.branch, payload.spec_path, owner="")
+    cache.clear()
     return {"triage": record}
 
 

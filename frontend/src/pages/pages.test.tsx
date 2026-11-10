@@ -449,6 +449,53 @@ describe("Claim and Workflows", () => {
     expect(await screen.findByRole("button", { name: /^release rabbitmq-server/i })).toBeEnabled();
   });
 
+  describe("Workflows actions", () => {
+    const mk = (name: string, owner: string, via: "claimed" | "assigned") => ({ ...finding({ package_name: name, triage: { owner } }), held_via: via });
+    const groups = [
+      { owner: "dev@example.org", total: 2, items: [mk("openssh", "dev@example.org", "assigned"), mk("json-glib", "dev@example.org", "claimed")] },
+      { owner: "other@example.org", total: 1, items: [mk("curl", "other@example.org", "assigned")] },
+    ];
+    const stub = (extra: Record<string, unknown> = {}) =>
+      stubFetch({ "/workflows": { me: "dev@example.org", total: 3, groups }, ...extra });
+
+    it("offers only Release on every row, whether claimed or assigned, with no Claim, Take over or Claimed", async () => {
+      vi.stubGlobal("fetch", stub().fn);
+      renderWith(me, <WorkflowsPage />);
+      await screen.findByText("openssh");
+      expect(screen.getAllByRole("button", { name: /^release /i })).toHaveLength(3);
+      expect(screen.queryByRole("button", { name: /claim|take over/i })).toBeNull();
+      expect(screen.getAllByText("Assigned")).toHaveLength(2);
+      expect(screen.getByText("Claimed")).toBeInTheDocument(); // the Held column keeps saying how
+    });
+
+    it("lets a developer release their own rows but not another developer's", async () => {
+      vi.stubGlobal("fetch", stub().fn);
+      renderWith(me, <WorkflowsPage />);
+      await screen.findByText("openssh");
+      expect(screen.getByRole("button", { name: /^release openssh/i })).toBeEnabled();
+      const theirs = screen.getByRole("button", { name: /^release curl/i });
+      expect(theirs).toBeDisabled();
+      expect(theirs).toHaveAttribute("title", expect.stringContaining("other@example.org"));
+    });
+
+    it("lets the administrator release anyone's row", async () => {
+      vi.stubGlobal("fetch", stub().fn);
+      renderWith({ ...adminContext, roleInfo: { ...adminContext.roleInfo, identity: { email: "dev@example.org" } } }, <WorkflowsPage />);
+      await screen.findByText("curl");
+      expect(screen.getByRole("button", { name: /^release curl/i })).toBeEnabled();
+    });
+
+    it("releases with the package name, so an assignment is taken back too", async () => {
+      const { fn, calls } = stub({ "/triage/release": { triage: {} } });
+      vi.stubGlobal("fetch", fn);
+      renderWith(me, <WorkflowsPage />);
+      await userEvent.click(await screen.findByRole("button", { name: /^release openssh/i }));
+      const call = calls.find((c) => c.url.pathname.endsWith("/triage/release"))!;
+      expect(call.init?.method).toBe("POST");
+      expect(JSON.parse(String(call.init?.body))).toMatchObject({ package_name: "openssh" });
+    });
+  });
+
   it("tells visitors that only developers can see Workflows, without asking the server", () => {
     const { fn, calls } = stubFetch({});
     vi.stubGlobal("fetch", fn);

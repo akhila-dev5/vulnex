@@ -102,3 +102,39 @@ def test_release_clears_the_owner(client, dev):  # noqa: F811
     assert client.post("/api/triage/release", json=FINDING, headers=dev).status_code == 200
     assert client.get("/api/workflows", headers=dev).json()["total"] == 0
     assert client.get("/api/findings").json()["items"][0]["triage"]["owner"] == ""
+
+
+ASSIGNEE = "dev1.vulnex@gmail.com"  # an address the administrator can assign to
+
+
+def _assignee(monkeypatch):
+    monkeypatch.setattr(config, "DEVELOPER_EMAILS", config.DEVELOPER_EMAILS | {ASSIGNEE})
+    identity = {**config.identity_for("developer"), "identity": ASSIGNEE, "email": ASSIGNEE}
+    token, _ = auth.sessions.create(identity, method="google", role="developer")
+    return {KEY_HEADER: token}
+
+
+def _assign(client, admin, email):  # noqa: F811
+    made = client.post("/api/assignments", headers=admin, json={
+        "cve_id": FINDING["cve_id"], "package_name": "demo", "assignee_email": email})
+    assert made.status_code == 200
+
+
+def test_release_also_takes_back_an_admin_assignment(client, admin, monkeypatch):  # noqa: F811
+    me = _assignee(monkeypatch)
+    _assign(client, admin, ASSIGNEE)
+    held = client.get("/api/workflows", headers=me).json()["groups"][0]
+    assert held["owner"] == ASSIGNEE and held["items"][0]["held_via"] == "assigned"
+    done = client.post("/api/triage/release", json={**FINDING, "package_name": "demo"}, headers=me)
+    assert done.status_code == 200
+    assert client.get("/api/workflows", headers=me).json()["total"] == 0
+
+
+def test_only_the_assignee_or_the_admin_can_release_an_assignment(client, other, admin, monkeypatch):  # noqa: F811
+    me = _assignee(monkeypatch)
+    _assign(client, admin, ASSIGNEE)
+    body = {**FINDING, "package_name": "demo"}
+    assert client.post("/api/triage/release", json=body, headers=other).status_code == 409
+    assert client.get("/api/workflows", headers=me).json()["total"] == 1
+    assert client.post("/api/triage/release", json=body, headers=admin).status_code == 200
+    assert client.get("/api/workflows", headers=me).json()["total"] == 0

@@ -21,7 +21,7 @@ Each row on the CVE detail page has a **Deep** button, an **Actions** menu and a
 
 **Rescore** (admin) opens a form with a CVSS score, a severity (suggested from the score) and a required reason. The Severity box on the CVE page then shows the new values and a note with who rescored it and why; the scanned values are kept.
 
-**Claim** (`ClaimButton.tsx`): every package row has a Claim button. It assigns the package to the signed-in Google account (the Owner column). Visitors see it disabled. A package claimed by someone else shows a disabled "Claimed" for developers; the owner sees Release, and the admin sees Take over.
+**Claim** (`ClaimButton.tsx`): every package row has a Claim button. It assigns the package to the signed-in Google account (the Owner column). Visitors see it disabled. A package claimed by someone else shows a disabled "Claimed" for developers; the owner sees Release, and the admin sees Take over. This is the CVE pages. The **Workflows** page is simpler: every row is already held by someone, so each row has just one **Release** button (`ReleaseButton.tsx`), enabled for the holder and the admin and disabled, with the holder named, for anyone else. The "Held" column still says Claimed or Assigned.
 
 A dispute goes: developer raises it → it appears under **Disputes** as Pending (the package shows "Pending dispute") → the admin approves → the package's resolution status becomes **Disputed** and the reason shows under the package ("Approved dispute"). A rejected dispute changes nothing on the package.
 
