@@ -5,6 +5,7 @@ import { AppContext, type AppContextValue } from "../app-context";
 import { TopNav } from "../components/TopNav";
 import { ADMIN_ROLE, DETAIL, OTHER_CVE, SECOND, adminContext, developerContext, finding, guestContext, stubFetch } from "../test/fixtures";
 import { DisputesPage } from "./DisputesPage";
+import { AutomationPage } from "./AutomationPage";
 import { WorkflowsPage } from "./WorkflowsPage";
 import { CveDetailPage } from "./CveDetailPage";
 import { CvesPage } from "./CvesPage";
@@ -25,10 +26,10 @@ beforeEach(() => vi.unstubAllGlobals());
 afterEach(() => vi.unstubAllGlobals());
 
 describe("top navigation", () => {
-  it("offers CVEs, Packages, Disputes and Workflows, in that order", () => {
+  it("offers CVEs, Packages, Disputes, Workflows and Automation, in that order", () => {
     renderWith(guestContext, <TopNav route={{ name: "cves" }} />);
     const nav = screen.getByRole("navigation", { name: /main navigation/i });
-    expect(within(nav).getAllByRole("link").map((a) => a.textContent)).toEqual(["CVEs", "Packages", "Disputes", "Workflows"]);
+    expect(within(nav).getAllByRole("link").map((a) => a.textContent)).toEqual(["CVEs", "Packages", "Disputes", "Workflows", "Automation"]);
     expect(within(nav).getByRole("link", { name: "CVEs" })).toHaveAttribute("aria-current", "page");
   });
   it("keeps CVEs highlighted on a CVE page", () => {
@@ -473,6 +474,74 @@ describe("Claim and Workflows", () => {
     expect(screen.getByText("curl")).toBeInTheDocument();
     expect(screen.getByText("Assigned")).toBeInTheDocument();
     expect(screen.getByText(/2 packages held across 3 developers/)).toBeInTheDocument();
+  });
+});
+
+describe("Automation page", () => {
+  const group = {
+    package_name: "curl", package_version: "8.0-1", branch: "3.0", spec_path: "SPECS/curl/curl.spec",
+    items: [{ cve_id: "CVE-2026-1001", severity: "high", first_seen: "2026-11-01" }, { cve_id: "CVE-2026-1002", severity: "low", first_seen: "2026-11-02" }],
+    requests: [],
+  };
+  const list = { "/automation": { owner: "vulnexsecurityautomation@gmail.com", total: 2, packages: [group] } };
+
+  it("tells visitors that only developers can see Automation, without asking the server", () => {
+    const { fn, calls } = stubFetch({});
+    vi.stubGlobal("fetch", fn);
+    renderWith(guestContext, <AutomationPage />);
+    expect(screen.getByText(/only developers can see automation/i)).toBeInTheDocument();
+    expect(calls).toHaveLength(0);
+  });
+
+  it("lists each package with its CVEs in a dropdown and an Automate button", async () => {
+    vi.stubGlobal("fetch", stubFetch(list).fn);
+    renderWith(developerContext, <AutomationPage />);
+    expect(await screen.findByRole("button", { name: "Automate curl" })).toBeInTheDocument();
+    expect(screen.getByText("CVE-2026-1001")).toBeInTheDocument();
+    expect(screen.getByText("CVE-2026-1002")).toBeInTheDocument();
+  });
+
+  it("queues only the ticked CVEs into a new PR", async () => {
+    const { fn, calls } = stubFetch({ ...list, "/automation/requests": { request: {} } });
+    vi.stubGlobal("fetch", fn);
+    const user = userEvent.setup();
+    renderWith(developerContext, <AutomationPage />);
+    await user.click(await screen.findByRole("button", { name: "Automate curl" }));
+    const dialog = screen.getByRole("dialog");
+    await user.click(within(dialog).getByRole("checkbox", { name: "CVE-2026-1002" })); // untick one
+    await user.click(within(dialog).getByRole("button", { name: /queue automation/i }));
+    const call = calls.find((c) => c.url.pathname.endsWith("/automation/requests"))!;
+    expect(JSON.parse(String(call.init?.body))).toEqual({
+      package_name: "curl", branch: "3.0", spec_path: "SPECS/curl/curl.spec",
+      cve_ids: ["CVE-2026-1001"], mode: "new_pr", pr_number: "",
+    });
+  });
+
+  it("asks for the PR number only when committing to an existing PR", async () => {
+    const { fn, calls } = stubFetch({ ...list, "/automation/requests": { request: {} } });
+    vi.stubGlobal("fetch", fn);
+    const user = userEvent.setup();
+    renderWith(developerContext, <AutomationPage />);
+    await user.click(await screen.findByRole("button", { name: "Automate curl" }));
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).queryByLabelText(/pr number/i)).toBeNull();
+    await user.click(within(dialog).getByRole("radio", { name: /existing pr/i }));
+    const queue = within(dialog).getByRole("button", { name: /queue automation/i });
+    expect(queue).toBeDisabled(); // a number is required
+    await user.type(within(dialog).getByLabelText(/pr number/i), "42");
+    await user.click(queue);
+    const call = calls.find((c) => c.url.pathname.endsWith("/automation/requests"))!;
+    expect(JSON.parse(String(call.init?.body))).toMatchObject({ mode: "existing_pr", pr_number: "42" });
+  });
+
+  it("will not queue with no CVE ticked", async () => {
+    vi.stubGlobal("fetch", stubFetch(list).fn);
+    const user = userEvent.setup();
+    renderWith(developerContext, <AutomationPage />);
+    await user.click(await screen.findByRole("button", { name: "Automate curl" }));
+    const dialog = screen.getByRole("dialog");
+    for (const box of within(dialog).getAllByRole("checkbox")) await user.click(box);
+    expect(within(dialog).getByRole("button", { name: /queue automation/i })).toBeDisabled();
   });
 });
 

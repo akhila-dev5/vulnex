@@ -47,6 +47,8 @@ Read endpoints are open to everyone. Write endpoints need the admin session (or,
 | `POST /api/cves/{id}/rescore` | Admin only. Replaces a CVE's severity and CVSS score; needs a severity, an optional score (0 to 10) and a reason |
 | `POST /api/triage/claim` · `release` | Developer or admin. Claim sets the package's owner to the caller (409 if another developer owns it; the admin may take over). Release clears it |
 | `GET /api/workflows` | Developer or admin only (401 otherwise). Every developer's packages grouped by owner (assignee, else claimer): `groups[]` with the caller first, then alphabetical; each item has `held_via` = `assigned` or `claimed` |
+| `GET /api/automation` | Developer or admin only. The automation account's open CVEs whose final patch verdict is Patch Available, grouped by package spec (`packages[]`, each with `items[]` and its latest `requests`) |
+| `POST /api/automation/requests` | Developer or admin only. Queue the ticked CVEs of one package into a single PR: `mode` is `new_pr` or `existing_pr` (which needs a numeric `pr_number`). The server re-checks the CVEs are ready. It only records the request (status `queued`); the automation that raises the PR picks it up |
 | `GET /api/disputes` | Dispute requests with counts per status (`status`, `search`, `page`) |
 | `POST /api/disputes/{id}/approve` · `reject` | Admin decision. Approve marks the package Disputed; reject leaves it unchanged |
 | `POST /api/triage/github-pr`, `google-pr` | Attach a pull request link |

@@ -204,6 +204,21 @@ CREATE TABLE IF NOT EXISTS cve_rescores (
     original_cvss_score REAL
 );
 
+-- A request to automate one package's fix: the ticked CVEs go into one pull request,
+-- either a new one or an existing one. The automation picks queued rows up.
+CREATE TABLE IF NOT EXISTS automation_requests (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    package_name TEXT NOT NULL,
+    branch TEXT NOT NULL DEFAULT '',
+    spec_path TEXT NOT NULL DEFAULT '',
+    cve_ids TEXT NOT NULL,
+    mode TEXT NOT NULL,
+    pr_number TEXT DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'queued',
+    requested_by TEXT,
+    requested_at TEXT
+);
+
 CREATE TABLE IF NOT EXISTS cve_cache (
     cve_id TEXT PRIMARY KEY,
     payload TEXT,
@@ -1139,6 +1154,42 @@ def create_dispute(
     )
     conn.commit()
     return get_dispute(conn, cursor.lastrowid) or {}
+
+
+def create_automation_request(
+    conn: sqlite3.Connection,
+    package_name: str,
+    branch: str,
+    spec_path: str,
+    cve_ids: list[str],
+    mode: str,
+    pr_number: str,
+    requested_by: str,
+) -> dict:
+    cursor = conn.execute(
+        "INSERT INTO automation_requests (package_name, branch, spec_path, cve_ids, mode, "
+        "pr_number, status, requested_by, requested_at) VALUES (?, ?, ?, ?, ?, ?, 'queued', ?, ?)",
+        (package_name, branch or "", spec_path or "", json.dumps(cve_ids), mode, pr_number or "",
+         requested_by, utcnow()),
+    )
+    conn.commit()
+    return _automation_row(conn.execute(
+        "SELECT * FROM automation_requests WHERE id = ?", (cursor.lastrowid,)).fetchone())
+
+
+def _automation_row(row) -> dict:
+    record = dict(row)
+    try:
+        record["cve_ids"] = json.loads(record.get("cve_ids") or "[]")
+    except ValueError:
+        record["cve_ids"] = []
+    return record
+
+
+def list_automation_requests(conn: sqlite3.Connection) -> list[dict]:
+    """Every request, newest first (the table stays small: one row per button press)."""
+    return [_automation_row(r) for r in conn.execute(
+        "SELECT * FROM automation_requests ORDER BY id DESC").fetchall()]
 
 
 def get_dispute(conn: sqlite3.Connection, dispute_id: int) -> dict | None:

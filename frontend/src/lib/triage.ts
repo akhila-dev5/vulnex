@@ -34,6 +34,7 @@ export const DEFAULT_ASSIGNEE = "gurujuakhila.dev@gmail.com";
 
 export const ASSIGNEES = [
   { email: DEFAULT_ASSIGNEE, label: `${DEFAULT_ASSIGNEE} (Admin / Dev)` },
+  { email: "vulnexsecurityautomation@gmail.com", label: "vulnexsecurityautomation@gmail.com (Automation)" },
   { email: "dev1.vulnex@gmail.com", label: "dev1.vulnex@gmail.com" },
   { email: "dev2.vulnex@gmail.com", label: "dev2.vulnex@gmail.com" },
   { email: "dev3.vulnex@gmail.com", label: "dev3.vulnex@gmail.com" },
