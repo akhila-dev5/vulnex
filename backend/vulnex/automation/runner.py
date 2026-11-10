@@ -76,6 +76,7 @@ class Deps:
     chat: Chat | None = None
     now: Callable[[], datetime] = lambda: datetime.now(timezone.utc)
     dry_run: bool = False
+    expected_login: str = ""  # the GitHub account PRs must be raised as (empty: just report it)
     log: Callable[[str], None] = print
 
 
@@ -243,6 +244,13 @@ def run_job(job: Job, deps: Deps, work: Path) -> Result:
     # 12. Push the topic branch and raise a draft PR, only in azurelinux-test.
     if deps.github is None:
         raise JobError("A GitHub client is needed to raise the PR")
+    actor = deps.github.login()
+    if deps.expected_login and actor.lower() != deps.expected_login.lower():
+        raise JobError(
+            f"The token belongs to GitHub user {actor!r}, but PRs must be raised as {deps.expected_login!r}. "
+            "Create AZL_TEST_TOKEN while signed in as that account."
+        )
+    log(f"Raising the PR as GitHub user {actor}")
     deps.push(repo, branch)
     texts = {c.cve_id: c.description for c in cves}
     if job.mode == "existing_pr":

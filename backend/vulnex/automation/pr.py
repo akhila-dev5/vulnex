@@ -88,6 +88,16 @@ class GitHub:
             raise RuntimeError(f"GitHub {method} {path} failed: {response.status_code} {response.text[:300]}")
         return response.json()
 
+    def login(self) -> str:
+        """The GitHub account this token acts as: the name that shows on every PR and comment."""
+        response = self.session.request(
+            "GET", f"{API}/user",
+            headers={"Authorization": f"Bearer {self.token}", "Accept": "application/vnd.github+json"}, timeout=60,
+        )
+        if response.status_code >= 400:
+            raise RuntimeError(f"GitHub could not say who this token belongs to: {response.status_code}")
+        return str(response.json().get("login", ""))
+
     def get_pull(self, number: int) -> dict:
         """An open pull request on a topic branch of ALLOWED_REPO, targeting an allowed base."""
         pr = self._call("GET", f"/pulls/{number}")
