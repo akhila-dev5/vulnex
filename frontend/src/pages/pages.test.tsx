@@ -449,6 +449,29 @@ describe("Claim and Workflows", () => {
     expect(await screen.findByRole("button", { name: /^release rabbitmq-server/i })).toBeEnabled();
   });
 
+  it("has no claim column; a GitHub PR column links the PR, or shows a dash when there is none", async () => {
+    const pr = { github_pr_number: "42", github_pr_url: "https://github.com/akhila-dev5/azurelinux-test/pull/42" };
+    const mk = (name: string, via: "claimed" | "assigned", triage: Record<string, string>) =>
+      ({ ...finding({ package_name: name, triage: { owner: "dev@example.org", ...triage } }), held_via: via });
+    const groups = [{ owner: "dev@example.org", total: 2, items: [mk("openssh", "assigned", pr), mk("json-glib", "claimed", {})] }];
+    vi.stubGlobal("fetch", stubFetch({ "/workflows": { me: "dev@example.org", total: 2, groups } }).fn);
+    renderWith(me, <WorkflowsPage />);
+    await screen.findByText("openssh");
+    expect(screen.getAllByRole("columnheader").map((h) => h.textContent)).toEqual(
+      ["CVE", "Package", "Scanned", "Branch", "Held", "Triage status", "Resolution status", "GitHub PR"],
+    );
+    expect(screen.queryByRole("button", { name: /claim|release|take over/i })).toBeNull();
+    expect(screen.getByText("Assigned")).toBeInTheDocument(); // the Held column still says how
+    expect(screen.getByText("Claimed")).toBeInTheDocument();
+    const link = screen.getByRole("link", { name: "#42" });
+    expect(link).toHaveAttribute("href", pr.github_pr_url);
+    expect(link).toHaveAttribute("target", "_blank");
+    const row = screen.getByText("json-glib").closest("tr")!;
+    const cells = within(row).getAllByRole("cell");
+    expect(cells[cells.length - 1]).toHaveTextContent("—"); // json-glib has no PR yet
+    expect(within(row).queryByRole("link", { name: /^#/ })).toBeNull();
+  });
+
   it("tells visitors that only developers can see Workflows, without asking the server", () => {
     const { fn, calls } = stubFetch({});
     vi.stubGlobal("fetch", fn);
