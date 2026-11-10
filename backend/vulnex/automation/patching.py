@@ -118,8 +118,12 @@ def reset(src: Path) -> None:
     run(["git", "clean", "-fdq"], src)
 
 
-def make_patch(src: Path, cve_id: str, dest: Path) -> Path:
-    """Step 9: commit the change (no .orig or .rej) and write CVE-xxxx-yyyy.patch."""
+def make_patch(src: Path, cve_id: str, dest: Path, reference: str = "") -> Path:
+    """Step 9: commit the change (no .orig or .rej) and write CVE-xxxx-yyyy.patch.
+
+    ``reference`` is the upstream patch URL; it goes under the subject as
+    "Upstream Patch Reference:   <url>".
+    """
     status = run(["git", "status", "--porcelain", "-z", "--untracked-files=all"], src).stdout
     paths = []
     for entry in status.split("\0"):
@@ -130,7 +134,10 @@ def make_patch(src: Path, cve_id: str, dest: Path) -> Path:
     if not paths:
         raise PatchError(f"{cve_id}: the patch changed nothing")
     run(["git", "add", "--", *paths], src)
-    run(["git", "commit", "-q", "-m", f"Address {cve_id}"], src)
+    message = ["-m", f"Address {cve_id}"]
+    if reference:
+        message += ["-m", f"Upstream Patch Reference:   {reference}"]
+    run(["git", "commit", "-q", *message], src)
     for leftover in [*src.rglob("*.orig"), *src.rglob("*.rej")]:
         if ".git" not in leftover.parts:
             leftover.unlink()

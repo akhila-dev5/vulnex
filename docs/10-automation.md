@@ -16,7 +16,7 @@ Automate button -> automation_requests (queued) -> GitHub Actions "Vulnex automa
 3. **Untar** Source0 and enter it; untar Source1 inside it.
 4. Remove `.gitignore`, then `git init` and an "Initial commit". (The commit uses `git add -A` first, because a fresh repo has nothing tracked and `commit -a` alone would commit nothing.)
 5. **Apply the existing patches** with `backend/vulnex/automation/apply_patches.sh`, then commit "In pace with azl-test". The script asks a question on failure; the worker gives it no terminal and reads its summary, so a failing existing patch stops the job.
-6. **Apply each upstream patch**: `patch -p1 --fuzz=0`. If it applies with no `.rej`, the change is committed (no `.orig` or `.rej`) as "Address CVE-xxxx-yyyy" and `git format-patch -1` writes `CVE-xxxx-yyyy.patch`.
+6. **Apply each upstream patch**: `patch -p1 --fuzz=0`. If it applies with no `.rej`, the change is committed (no `.orig` or `.rej`) as "Address CVE-xxxx-yyyy" and `git format-patch -1` writes `CVE-xxxx-yyyy.patch`. Under the subject the patch carries `Upstream Patch Reference:   <upstream URL with the full commit SHA>.patch` (a short SHA in the link is replaced by the full one from the downloaded patch).
 7. **If it does not apply**, an AI model backports it (see below), and the patch is made the same way.
 8. **Edit the spec**: add `PatchN`, bump the Release, add a changelog entry:
    ```
