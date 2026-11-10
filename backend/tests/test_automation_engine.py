@@ -198,6 +198,36 @@ def test_automation_never_pushes_to_a_base_branch():
     pr.assert_head_branch("topic/demo/3.0/CVE-2026-0001")
 
 
+class _User:
+    def __init__(self, login, status=200):
+        self.login, self.status = login, status
+
+    def get(self, url, **kwargs):
+        me = self
+
+        class R:
+            status_code = me.status
+
+            def json(self):
+                return {"login": me.login}
+        return R()
+
+
+def test_a_token_from_the_repo_owner_is_refused_so_prs_are_not_credited_to_a_person():
+    with pytest.raises(pr.TargetRepoError, match="credited to that person"):
+        pr.check_token_owner("t", "", _User("akhila-dev5"))
+    assert pr.check_token_owner("t", "", _User("vulnex-sec")) == "vulnex-sec"
+
+
+def test_a_token_must_belong_to_the_named_automation_account():
+    assert pr.check_token_owner("t", "Vulnex-Sec", _User("vulnex-sec")) == "vulnex-sec"
+    with pytest.raises(pr.TargetRepoError, match="belongs to 'someone'"):
+        pr.check_token_owner("t", "vulnex-sec", _User("someone"))
+    assert pr.check_token_owner("t", "akhila-dev5", _User("akhila-dev5")) == "akhila-dev5"  # deliberate choice
+    with pytest.raises(pr.TargetRepoError, match="did not accept"):
+        pr.check_token_owner("t", "", _User("x", status=401))
+
+
 class _Session:
     def __init__(self, response):
         self.response, self.sent = response, []

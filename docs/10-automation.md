@@ -53,10 +53,22 @@ Repository **Settings > Secrets and variables > Actions** in the vulnex repo:
 
 | Name | Kind | What |
 |---|---|---|
-| `AZL_TEST_TOKEN` | secret | A fine-grained token for **only** `akhila-dev5/azurelinux-test` with Contents and Pull requests set to read and write |
+| `AZL_TEST_TOKEN` | secret | A token **created while signed in as the automation GitHub account** (see below) that can push branches and open PRs in azurelinux-test |
+| `VULNEX_AUTOMATION_GITHUB_LOGIN` | variable | The automation account's GitHub username. The worker refuses a token that belongs to anyone else |
 | `VULNEX_AUTOMATION_KEY` | secret | Same value as `VULNEX_AUTOMATION_KEY` on Render |
 | `VULNEX_API_URL` | variable | `https://vulnex-1k5h.onrender.com` |
 | `VULNEX_AI_API_KEY` | secret, optional | Only if you do not use GitHub Models |
+
+### Who the PRs are credited to
+
+GitHub credits a PR, its description and any comment to **the owner of the token**, whatever name is on the commits. A token made from your own account makes every PR look like you wrote it. So:
+
+1. Sign in to GitHub as the automation account, and add `vulnexsecurityautomation@gmail.com` as a verified email there (this also links its commits to the account).
+2. From the repository owner's account, invite that account as a **collaborator with Write access** on `akhila-dev5/azurelinux-test`, and accept the invitation as the automation account.
+3. As the automation account, create the token (Settings > Developer settings > Personal access tokens). A fine-grained token cannot reach another person's personal repository, so if azurelinux-test is not offered in its repository list, use a **classic token** with the `repo` scope instead.
+4. Save it as `AZL_TEST_TOKEN`, and set the variable `VULNEX_AUTOMATION_GITHUB_LOGIN` to that account's username.
+
+At start-up the worker asks GitHub whose token it holds. If it is the repository owner's (or not the named login) it stops with a clear message before doing anything.
 
 The workflow runs every 30 minutes and can be started by hand (with a **dry run** option that does everything except push and open the PR). To start it the moment you press Automate, add `VULNEX_DISPATCH_TOKEN` on Render: a fine-grained token for the vulnex repo with Actions set to read and write.
 

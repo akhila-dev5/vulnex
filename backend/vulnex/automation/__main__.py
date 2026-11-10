@@ -33,6 +33,7 @@ def scrub(text: str, *secrets: str) -> str:
 
 def make_deps(token: str, dry_run: bool) -> Deps:
     pr.assert_target_repo()
+    print(f"Token belongs to {pr.check_token_owner(token, os.environ.get('VULNEX_AUTOMATION_GITHUB_LOGIN', ''))}")
     remote = f"https://x-access-token:{token}@github.com/{pr.ALLOWED_REPO}.git"
 
     def checkout(branch: str, folder: str, dest: Path) -> Path:
