@@ -8,6 +8,7 @@ import { CveDetailPage } from "./pages/CveDetailPage";
 import { CvesPage } from "./pages/CvesPage";
 import { DisputesPage } from "./pages/DisputesPage";
 import { PackagesPage } from "./pages/PackagesPage";
+import { AutomationPage } from "./pages/AutomationPage";
 import { WorkflowsPage } from "./pages/WorkflowsPage";
 import { hrefFor } from "./lib/route";
 
@@ -53,6 +54,8 @@ function App() {
           <DisputesPage />
         ) : route.name === "workflows" ? (
           <WorkflowsPage />
+        ) : route.name === "automation" ? (
+          <AutomationPage />
         ) : route.name === "cves" ? (
           <CvesPage />
         ) : (

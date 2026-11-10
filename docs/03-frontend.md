@@ -12,6 +12,7 @@ There are five pages, chosen by the part of the URL after `#`.
 | `#/packages` | Packages (`PackagesPage.tsx`) | Every scanned package and its version |
 | `#/disputes` | Disputes (`DisputesPage.tsx`) | Every dispute request in Pending / Approved / Rejected tabs; the admin approves or rejects here |
 | `#/workflows` | Workflows (`WorkflowsPage.tsx`) | Every developer's packages (claimed or assigned), one section per email: the signed-in account first, then the rest alphabetically. Visitors see a message that only developers can see it |
+| `#/automation` | Automation (`AutomationPage.tsx`, `AutomateModal.tsx`) | The automation account's Patch Available CVEs, one card per package with a CVE dropdown and an Automate button. The pop-up has a CVE checklist and a choice of new PR or an existing PR (asks for its number). Visitors see a message that only developers can see it |
 | `#/cve/<id>` | CVE detail (`CveDetailPage.tsx`) | The CVE, severity box, tracker links, and a table of every affected package |
 
 ![CVE detail page](images/cve-detail.png)

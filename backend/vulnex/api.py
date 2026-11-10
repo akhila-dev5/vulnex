@@ -323,6 +323,7 @@ class AssignmentRequest(BaseModel):
 
 ASSIGNABLE_EMAILS = {
     "gurujuakhila.dev@gmail.com",
+    "vulnexsecurityautomation@gmail.com",
     "dev1.vulnex@gmail.com",
     "dev2.vulnex@gmail.com",
     "dev3.vulnex@gmail.com",
@@ -352,6 +353,15 @@ class DisputeRequest(FindingRef):
 class GithubPRRequest(FindingRef):
     number: str
     url: str = ""
+
+
+class AutomationRequest(BaseModel):
+    package_name: str
+    branch: str = ""
+    spec_path: str = ""
+    cve_ids: list[str] = []
+    mode: str  # "new_pr" or "existing_pr"
+    pr_number: str = ""
 
 
 class RescoreRequest(BaseModel):
@@ -1033,6 +1043,83 @@ def get_workflows(request: Request) -> dict:
         "total": sum(len(items) for items in groups.values()),
         "groups": [{"owner": email, "total": len(groups[email]), "items": groups[email]} for email in ordered],
     }
+
+
+def _automation_packages(conn) -> list[dict]:
+    """The automation account's open CVEs that have a patch available, grouped by package.
+
+    "Under the automation account" means assigned to it by the administrator or claimed by
+    it (the same rule Workflows uses). "Patch available" is the final patch verdict, so an
+    administrator's override counts. One group per package spec, since one PR fixes one spec.
+    """
+    me = (config.AUTOMATION_EMAIL or "").strip().lower()
+    rows, _ = db.list_findings(conn, limit=1_000_000, offset=0)
+    _decorate_findings(conn, rows, slim=True)
+    groups: dict[tuple[str, str, str], dict] = {}
+    for row in rows:
+        assigned = ((row.get("assignment") or {}).get("assignee_email") or "").strip().lower()
+        claimed = ((row.get("triage") or {}).get("owner") or "").strip().lower()
+        if (assigned or claimed) != me or row.get("status") != "affected":
+            continue
+        if ((row.get("patch_availability") or {}).get("final_verdict") or "") != "Patch Available":
+            continue
+        key = (row.get("package_name") or "", row.get("branch") or "", row.get("spec_path") or "")
+        group = groups.setdefault(key, {
+            "package_name": key[0], "package_version": row.get("package_version"),
+            "branch": key[1], "spec_path": key[2], "items": [], "requests": [],
+        })
+        group["items"].append(row)
+    requests = db.list_automation_requests(conn)
+    for group in groups.values():
+        group["items"].sort(key=lambda r: r["cve_id"])
+        group["requests"] = [
+            r for r in requests
+            if (r["package_name"], r["branch"], r["spec_path"]) == (group["package_name"], group["branch"], group["spec_path"])
+        ][:3]
+    return sorted(groups.values(), key=lambda g: (g["package_name"].lower(), g["branch"]))
+
+
+@app.get("/api/automation")
+def get_automation(request: Request) -> dict:
+    """Packages ready for automation, with their CVEs. Developers and the administrator only."""
+    require_claimer(request)
+    with db.session() as conn:
+        packages = _automation_packages(conn)
+    return {
+        "owner": (config.AUTOMATION_EMAIL or "").strip().lower(),
+        "total": sum(len(g["items"]) for g in packages),
+        "packages": packages,
+    }
+
+
+@app.post("/api/automation/requests")
+def request_automation(payload: AutomationRequest, request: Request) -> dict:
+    """Queue one package's ticked CVEs to be fixed in a single new or existing pull request."""
+    _, me = require_claimer(request)
+    mode = payload.mode.strip()
+    if mode not in ("new_pr", "existing_pr"):
+        raise HTTPException(status_code=400, detail="Choose either a new PR or an existing PR")
+    number = ""
+    if mode == "existing_pr":
+        number = (payload.pr_number or "").strip().lstrip("#")
+        if not number.isdigit():
+            raise HTTPException(status_code=400, detail="Enter the PR number (digits only)")
+    wanted = sorted({c.strip().upper() for c in payload.cve_ids if c.strip()})
+    if not wanted:
+        raise HTTPException(status_code=400, detail="Tick at least one CVE")
+    key = (payload.package_name, payload.branch or "", payload.spec_path or "")
+    with db.session() as conn:
+        group = next(
+            (g for g in _automation_packages(conn)
+             if (g["package_name"], g["branch"], g["spec_path"]) == key),
+            None,
+        )
+        allowed = {i["cve_id"] for i in (group or {}).get("items", [])}
+        if group is None or not set(wanted) <= allowed:
+            raise HTTPException(status_code=400, detail="Those CVEs are not ready for automation on this package")
+        record = db.create_automation_request(conn, key[0], key[1], key[2], wanted, mode, number, me)
+    cache.clear()
+    return {"request": record}
 
 
 @app.post("/api/cves/{cve_id}/rescore")
