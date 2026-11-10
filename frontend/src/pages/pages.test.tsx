@@ -449,51 +449,27 @@ describe("Claim and Workflows", () => {
     expect(await screen.findByRole("button", { name: /^release rabbitmq-server/i })).toBeEnabled();
   });
 
-  describe("Workflows actions", () => {
-    const mk = (name: string, owner: string, via: "claimed" | "assigned") => ({ ...finding({ package_name: name, triage: { owner } }), held_via: via });
-    const groups = [
-      { owner: "dev@example.org", total: 2, items: [mk("openssh", "dev@example.org", "assigned"), mk("json-glib", "dev@example.org", "claimed")] },
-      { owner: "other@example.org", total: 1, items: [mk("curl", "other@example.org", "assigned")] },
-    ];
-    const stub = (extra: Record<string, unknown> = {}) =>
-      stubFetch({ "/workflows": { me: "dev@example.org", total: 3, groups }, ...extra });
-
-    it("offers only Release on every row, whether claimed or assigned, with no Claim, Take over or Claimed", async () => {
-      vi.stubGlobal("fetch", stub().fn);
-      renderWith(me, <WorkflowsPage />);
-      await screen.findByText("openssh");
-      expect(screen.getAllByRole("button", { name: /^release /i })).toHaveLength(3);
-      expect(screen.queryByRole("button", { name: /claim|take over/i })).toBeNull();
-      expect(screen.getAllByText("Assigned")).toHaveLength(2);
-      expect(screen.getByText("Claimed")).toBeInTheDocument(); // the Held column keeps saying how
-    });
-
-    it("lets a developer release their own rows but not another developer's", async () => {
-      vi.stubGlobal("fetch", stub().fn);
-      renderWith(me, <WorkflowsPage />);
-      await screen.findByText("openssh");
-      expect(screen.getByRole("button", { name: /^release openssh/i })).toBeEnabled();
-      const theirs = screen.getByRole("button", { name: /^release curl/i });
-      expect(theirs).toBeDisabled();
-      expect(theirs).toHaveAttribute("title", expect.stringContaining("other@example.org"));
-    });
-
-    it("lets the administrator release anyone's row", async () => {
-      vi.stubGlobal("fetch", stub().fn);
-      renderWith({ ...adminContext, roleInfo: { ...adminContext.roleInfo, identity: { email: "dev@example.org" } } }, <WorkflowsPage />);
-      await screen.findByText("curl");
-      expect(screen.getByRole("button", { name: /^release curl/i })).toBeEnabled();
-    });
-
-    it("releases with the package name, so an assignment is taken back too", async () => {
-      const { fn, calls } = stub({ "/triage/release": { triage: {} } });
-      vi.stubGlobal("fetch", fn);
-      renderWith(me, <WorkflowsPage />);
-      await userEvent.click(await screen.findByRole("button", { name: /^release openssh/i }));
-      const call = calls.find((c) => c.url.pathname.endsWith("/triage/release"))!;
-      expect(call.init?.method).toBe("POST");
-      expect(JSON.parse(String(call.init?.body))).toMatchObject({ package_name: "openssh" });
-    });
+  it("has no claim column; a GitHub PR column links the PR, or shows a dash when there is none", async () => {
+    const pr = { github_pr_number: "42", github_pr_url: "https://github.com/akhila-dev5/azurelinux-test/pull/42" };
+    const mk = (name: string, via: "claimed" | "assigned", triage: Record<string, string>) =>
+      ({ ...finding({ package_name: name, triage: { owner: "dev@example.org", ...triage } }), held_via: via });
+    const groups = [{ owner: "dev@example.org", total: 2, items: [mk("openssh", "assigned", pr), mk("json-glib", "claimed", {})] }];
+    vi.stubGlobal("fetch", stubFetch({ "/workflows": { me: "dev@example.org", total: 2, groups } }).fn);
+    renderWith(me, <WorkflowsPage />);
+    await screen.findByText("openssh");
+    expect(screen.getAllByRole("columnheader").map((h) => h.textContent)).toEqual(
+      ["CVE", "Package", "Scanned", "Branch", "Held", "Triage status", "Resolution status", "GitHub PR"],
+    );
+    expect(screen.queryByRole("button", { name: /claim|release|take over/i })).toBeNull();
+    expect(screen.getByText("Assigned")).toBeInTheDocument(); // the Held column still says how
+    expect(screen.getByText("Claimed")).toBeInTheDocument();
+    const link = screen.getByRole("link", { name: "#42" });
+    expect(link).toHaveAttribute("href", pr.github_pr_url);
+    expect(link).toHaveAttribute("target", "_blank");
+    const row = screen.getByText("json-glib").closest("tr")!;
+    const cells = within(row).getAllByRole("cell");
+    expect(cells[cells.length - 1]).toHaveTextContent("—"); // json-glib has no PR yet
+    expect(within(row).queryByRole("link", { name: /^#/ })).toBeNull();
   });
 
   it("tells visitors that only developers can see Workflows, without asking the server", () => {

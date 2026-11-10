@@ -3,7 +3,6 @@ import { AlertCircle, Lock, RefreshCw } from "lucide-react";
 import { isAbort, messageOf, request } from "../api/client";
 import type { Finding } from "../api/types";
 import { useApp } from "../app-context";
-import { ReleaseButton } from "../components/ReleaseButton";
 import { StatusPill } from "../components/StatusPill";
 import { findingKey, resolutionOf, triageStatusOf } from "../lib/findings";
 import { formatDayMonth, statusLabel, statusTone } from "../lib/labels";
@@ -64,7 +63,7 @@ export function WorkflowsPage() {
           <h1>Workflows</h1>
           <p>
             {data
-              ? `${data.total} package${data.total === 1 ? "" : "s"} held across ${groups.length} developer${groups.length === 1 ? "" : "s"}, claimed or assigned. Claim a package from the CVEs page to track it here, and Release gives one back.`
+              ? `${data.total} package${data.total === 1 ? "" : "s"} held across ${groups.length} developer${groups.length === 1 ? "" : "s"}, claimed or assigned. Claim a package from the CVEs page to track it here.`
               : "The packages each developer holds."}
           </p>
         </div>
@@ -100,7 +99,7 @@ export function WorkflowsPage() {
                       <th>Held</th>
                       <th>Triage status</th>
                       <th>Resolution status</th>
-                      <th>Action</th>
+                      <th>GitHub PR</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -120,7 +119,19 @@ export function WorkflowsPage() {
                         <td>{row.held_via === "assigned" ? "Assigned" : "Claimed"}</td>
                         <td><StatusPill tone={statusTone(triageStatusOf(row))}>{statusLabel(triageStatusOf(row))}</StatusPill></td>
                         <td><StatusPill tone={statusTone(resolutionOf(row))}>{statusLabel(resolutionOf(row))}</StatusPill></td>
-                        <td><ReleaseButton finding={row} holder={group.owner} onChanged={reload} /></td>
+                        <td>
+                          {row.triage?.github_pr_number ? (
+                            row.triage.github_pr_url ? (
+                              <a className="cve-link" href={row.triage.github_pr_url} target="_blank" rel="noreferrer">
+                                {`#${row.triage.github_pr_number}`}
+                              </a>
+                            ) : (
+                              `#${row.triage.github_pr_number}`
+                            )
+                          ) : (
+                            <span className="muted">&mdash;</span>
+                          )}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
