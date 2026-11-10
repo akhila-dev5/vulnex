@@ -112,6 +112,10 @@ AUTOMATION_EMAIL = os.environ.get(
     "VULNEX_AUTOMATION_EMAIL", "vulnexsecurityautomation@gmail.com"
 )
 AUTOMATION_KEY = os.environ.get("VULNEX_AUTOMATION_KEY", "")
+# Optional: a token that may start the "Vulnex automation" workflow the moment a request is queued
+# (otherwise the workflow's schedule picks the request up).
+DISPATCH_TOKEN = os.environ.get("VULNEX_DISPATCH_TOKEN", "")
+DISPATCH_REPO = os.environ.get("VULNEX_DISPATCH_REPO", "akhila-dev5/vulnex")
 
 # How long a sign-in stays valid (seconds).
 SESSION_TTL = int(os.environ.get("VULNEX_SESSION_TTL", str(12 * 3600)))

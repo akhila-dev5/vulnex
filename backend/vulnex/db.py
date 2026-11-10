@@ -216,7 +216,12 @@ CREATE TABLE IF NOT EXISTS automation_requests (
     pr_number TEXT DEFAULT '',
     status TEXT NOT NULL DEFAULT 'queued',
     requested_by TEXT,
-    requested_at TEXT
+    requested_at TEXT,
+    started_at TEXT,
+    finished_at TEXT,
+    pr_url TEXT DEFAULT '',
+    branch_name TEXT DEFAULT '',
+    message TEXT DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS cve_cache (
@@ -294,6 +299,12 @@ def init_db(conn) -> None:
     for column in ("fixed_in", "fixed_in_basis", "fix_source", "first_seen"):
         if column not in finding_columns:
             conn.execute(f"ALTER TABLE findings ADD COLUMN {column} TEXT")
+    request_columns = {
+        row["name"] for row in conn.execute("PRAGMA table_info(automation_requests)").fetchall()
+    }
+    for column in ("started_at", "finished_at", "pr_url", "branch_name", "message"):
+        if column not in request_columns:
+            conn.execute(f"ALTER TABLE automation_requests ADD COLUMN {column} TEXT DEFAULT ''")
     conn.commit()
 
 
@@ -1190,6 +1201,49 @@ def list_automation_requests(conn: sqlite3.Connection) -> list[dict]:
     """Every request, newest first (the table stays small: one row per button press)."""
     return [_automation_row(r) for r in conn.execute(
         "SELECT * FROM automation_requests ORDER BY id DESC").fetchall()]
+
+
+STALE_RUNNING_HOURS = 3
+
+
+def claim_automation_request(conn: sqlite3.Connection) -> dict | None:
+    """Take the oldest queued request (or one stuck 'running' for hours) and mark it running."""
+    from datetime import datetime, timedelta, timezone
+
+    stale = (datetime.now(timezone.utc) - timedelta(hours=STALE_RUNNING_HOURS)).isoformat()
+    for _ in range(3):
+        row = conn.execute(
+            "SELECT id FROM automation_requests WHERE status = 'queued' "
+            "OR (status = 'running' AND COALESCE(started_at, '') < ?) ORDER BY id LIMIT 1",
+            (stale,),
+        ).fetchone()
+        if not row:
+            return None
+        cursor = conn.execute(
+            "UPDATE automation_requests SET status = 'running', started_at = ? WHERE id = ? "
+            "AND (status = 'queued' OR (status = 'running' AND COALESCE(started_at, '') < ?))",
+            (utcnow(), row["id"], stale),
+        )
+        conn.commit()
+        if cursor.rowcount == 1:  # nobody else claimed it first
+            return _automation_row(conn.execute(
+                "SELECT * FROM automation_requests WHERE id = ?", (row["id"],)).fetchone())
+    return None
+
+
+def finish_automation_request(
+    conn: sqlite3.Connection, request_id: int, status: str, message: str = "",
+    pr_url: str = "", pr_number: str = "", branch_name: str = "",
+) -> dict | None:
+    conn.execute(
+        "UPDATE automation_requests SET status = ?, message = ?, pr_url = ?, "
+        "pr_number = CASE WHEN ? != '' THEN ? ELSE pr_number END, branch_name = ?, finished_at = ? "
+        "WHERE id = ?",
+        (status, message, pr_url, pr_number, pr_number, branch_name, utcnow(), request_id),
+    )
+    conn.commit()
+    row = conn.execute("SELECT * FROM automation_requests WHERE id = ?", (request_id,)).fetchone()
+    return _automation_row(row) if row else None
 
 
 def get_dispute(conn: sqlite3.Connection, dispute_id: int) -> dict | None:

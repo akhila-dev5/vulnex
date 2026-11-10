@@ -30,7 +30,7 @@ Triage tables (typed by people, never overwritten by a scan):
 | `finding_comments` | Comments on a finding |
 | `disputes` | Dispute requests: package copied in, reason, status (`pending` / `approved` / `rejected`), who requested and who decided, decision note |
 | `cve_rescores` | One row per rescored CVE: the admin's severity and CVSS score, the reason, who and when, and the first scanned values. Shown instead of the scanned values everywhere (list, filters, summary cards, CVE page) |
-| `automation_requests` | One row per press of Automate: package, branch, spec, the ticked CVE ids (JSON), `new_pr` or `existing_pr` plus its PR number, status (`queued`), who and when |
+| `automation_requests` | One row per press of Automate: package, branch, spec, the ticked CVE ids (JSON), `new_pr` or `existing_pr` plus its PR number, status (`queued`, `running`, `done`, `partial`, `failed`), who and when. Also when it started and finished, the PR link and branch the worker made, and a message |
 | `assignments` | Findings handed to patch automation, with status and assignee |
 | `assignment_comments` | Comments on an assignment |
 | `cve_cache` | Cached enrichment for a CVE so it is fetched once |

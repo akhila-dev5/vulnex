@@ -216,7 +216,7 @@ _CAPABILITIES = {
     # Developers: set a GitHub PR, comment and raise disputes. Approving a dispute,
     # assigning and setting a patch verdict stay with the administrator.
     ROLE_DEVELOPER: {"comment", "dispute", "set_pr", "claim"},
-    ROLE_AUTOMATION: {"set_pr"},
+    ROLE_AUTOMATION: {"set_pr", "run_automation"},
     ROLE_VIEWER: set(),
 }
 
@@ -1045,6 +1045,28 @@ def get_workflows(request: Request) -> dict:
     }
 
 
+def require_automation(request: Request) -> None:
+    """Only the automation key may take jobs and report results."""
+    if "run_automation" not in _CAPABILITIES.get(resolve_role(request), set()):
+        raise HTTPException(status_code=401, detail="Only the automation key can do this.")
+
+
+def _dispatch_runner() -> None:
+    """Best effort: start the automation workflow now instead of waiting for its schedule."""
+    if not config.DISPATCH_TOKEN:
+        return
+    try:
+        import requests as http
+
+        http.post(
+            f"https://api.github.com/repos/{config.DISPATCH_REPO}/actions/workflows/automation.yml/dispatches",
+            headers={"Authorization": f"Bearer {config.DISPATCH_TOKEN}", "Accept": "application/vnd.github+json"},
+            json={"ref": "main"}, timeout=5,
+        )
+    except Exception:  # the schedule is the fallback; never fail the request over this
+        pass
+
+
 def _automation_packages(conn) -> list[dict]:
     """The automation account's open CVEs that have a patch available, grouped by package.
 
@@ -1063,6 +1085,8 @@ def _automation_packages(conn) -> list[dict]:
             continue
         if ((row.get("patch_availability") or {}).get("final_verdict") or "") != "Patch Available":
             continue
+        if ((row.get("triage") or {}).get("github_pr_number") or "").strip():
+            continue  # a PR is already set for it
         key = (row.get("package_name") or "", row.get("branch") or "", row.get("spec_path") or "")
         group = groups.setdefault(key, {
             "package_name": key[0], "package_version": row.get("package_version"),
@@ -1072,6 +1096,11 @@ def _automation_packages(conn) -> list[dict]:
     requests = db.list_automation_requests(conn)
     for group in groups.values():
         group["items"].sort(key=lambda r: r["cve_id"])
+        group["busy"] = any(
+            r["status"] in ("queued", "running")
+            and (r["package_name"], r["branch"], r["spec_path"]) == (group["package_name"], group["branch"], group["spec_path"])
+            for r in requests
+        )
         group["requests"] = [
             r for r in requests
             if (r["package_name"], r["branch"], r["spec_path"]) == (group["package_name"], group["branch"], group["spec_path"])
@@ -1114,10 +1143,69 @@ def request_automation(payload: AutomationRequest, request: Request) -> dict:
              if (g["package_name"], g["branch"], g["spec_path"]) == key),
             None,
         )
+        if group and group.get("busy"):
+            raise HTTPException(status_code=409, detail="A request for this package is already queued or running.")
         allowed = {i["cve_id"] for i in (group or {}).get("items", [])}
         if group is None or not set(wanted) <= allowed:
             raise HTTPException(status_code=400, detail="Those CVEs are not ready for automation on this package")
         record = db.create_automation_request(conn, key[0], key[1], key[2], wanted, mode, number, me)
+    cache.clear()
+    _dispatch_runner()
+    return {"request": record}
+
+
+class JobResult(BaseModel):
+    status: str
+    message: str = ""
+    pr_url: str = ""
+    pr_number: str = ""
+    branch_name: str = ""
+    fixed: list[str] = []
+
+
+@app.post("/api/automation/jobs/next")
+def next_automation_job(request: Request) -> dict:
+    """The automation worker asks for work: the oldest queued request, marked running."""
+    require_automation(request)
+    with db.session() as conn:
+        claimed = db.claim_automation_request(conn)
+        if not claimed:
+            return {"job": None}
+        key = (claimed["package_name"], claimed["branch"], claimed["spec_path"])
+        group = next(
+            (g for g in _automation_packages(conn)
+             if (g["package_name"], g["branch"], g["spec_path"]) == key),
+            None,
+        )
+        wanted = set(claimed["cve_ids"])
+        items = [i for i in (group or {}).get("items", []) if i["cve_id"] in wanted]
+        if not items:
+            db.finish_automation_request(conn, claimed["id"], "failed", "None of the CVEs are ready any more.")
+            return {"job": None}
+        return {"job": {
+            "id": claimed["id"], "package_name": claimed["package_name"], "spec_path": claimed["spec_path"],
+            "mode": claimed["mode"], "pr_number": claimed["pr_number"],
+            "cves": [{
+                "cve_id": i["cve_id"], "severity": i.get("severity") or "", "description": i.get("description") or "",
+                "patch_link": (i.get("patch_availability") or {}).get("patch_link") or "",
+                "branch": i.get("branch") or "", "spec_path": i.get("spec_path") or "",
+            } for i in items],
+        }}
+
+
+@app.post("/api/automation/jobs/{job_id}/result")
+def automation_job_result(job_id: int, payload: JobResult, request: Request) -> dict:
+    """The worker reports how a request ended."""
+    require_automation(request)
+    if payload.status not in ("done", "partial", "failed"):
+        raise HTTPException(status_code=400, detail="status must be done, partial or failed")
+    with db.session() as conn:
+        record = db.finish_automation_request(
+            conn, job_id, payload.status, payload.message[:2000], payload.pr_url,
+            payload.pr_number.lstrip("#"), payload.branch_name,
+        )
+    if record is None:
+        raise HTTPException(status_code=404, detail="No such request")
     cache.clear()
     return {"request": record}
 

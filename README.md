@@ -24,7 +24,7 @@ Needs Python 3.11+. To work on the screens, also build the frontend: `cd fronten
 
 The notes in [`docs/`](docs/README.md) explain the project one topic at a time:
 
-[Overview](docs/01-overview.md) · [Architecture](docs/02-architecture.md) · [Frontend](docs/03-frontend.md) · [Backend](docs/04-backend.md) · [Database](docs/05-database.md) · [Scanning](docs/06-scanning.md) · [Deployment](docs/07-deployment.md) · [Technologies](docs/08-technologies.md) · [Running locally](docs/09-running-locally.md)
+[Overview](docs/01-overview.md) · [Architecture](docs/02-architecture.md) · [Frontend](docs/03-frontend.md) · [Backend](docs/04-backend.md) · [Database](docs/05-database.md) · [Scanning](docs/06-scanning.md) · [Deployment](docs/07-deployment.md) · [Technologies](docs/08-technologies.md) · [Running locally](docs/09-running-locally.md) · [Automation](docs/10-automation.md)
 
 ## Built with
 
