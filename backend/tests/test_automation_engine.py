@@ -86,9 +86,6 @@ def world(tmp_path):
             return {"base": {"ref": "3.0-dev"}, "head": {"ref": "topic/demo/3.0/CVE-2026-0001"},
                     "html_url": f"https://github.com/akhila-dev5/azurelinux-test/pull/{number}"}
 
-        def login(self):
-            return "vulnex-sec"
-
         def comment(self, number, body):
             comments.append((number, body))
 
@@ -308,17 +305,6 @@ def test_mixed_severity_uses_fasttrack_and_lists_each_severity(world):
     assert "CVE-2026-0001 | HIGH" in body and "CVE-2026-0002 | MEDIUM" in body
     spec = (world.work / "repo/SPECS/demo/demo.spec").read_text()
     assert "- Patch for CVE-2026-0001, CVE-2026-0002\n" in spec and spec.count("Release:        4") == 1
-
-
-def test_a_token_owned_by_the_wrong_github_account_is_refused(world):
-    with pytest.raises(JobError, match="belongs to GitHub user 'vulnex-sec'"):
-        run_job(job(CveJob(**CLEAN_CVE)), world.deps(expected_login="akhila-dev5"), world.work)
-    assert not world.pushed and not world.prs
-
-
-def test_the_expected_github_account_is_accepted(world):
-    result = run_job(job(CveJob(**CLEAN_CVE)), world.deps(expected_login="Vulnex-Sec"), world.work)
-    assert result.status == "done" and world.prs
 
 
 def test_dry_run_changes_nothing_remote(world):

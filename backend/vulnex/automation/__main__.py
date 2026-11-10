@@ -4,7 +4,6 @@ Environment:
   VULNEX_API_URL          the Vulnex backend, e.g. https://vulnex-1k5h.onrender.com
   VULNEX_AUTOMATION_KEY   the automation key the backend trusts
   AZL_TEST_TOKEN          a token that can push branches and open PRs in azurelinux-test
-  VULNEX_AUTOMATION_GITHUB_USER  optional: the GitHub login PRs must be raised as (refuses any other)
   VULNEX_AI_*             optional, see ai.py (GITHUB_TOKEN works by default in GitHub Actions)
 """
 
@@ -73,8 +72,7 @@ def make_deps(token: str, dry_run: bool) -> Deps:
             return None
 
     return Deps(checkout=checkout, download=download, push=push, base_release=base_release,
-                github=pr.GitHub(token), chat=build_chat(), dry_run=dry_run,
-                expected_login=os.environ.get("VULNEX_AUTOMATION_GITHUB_USER", ""))
+                github=pr.GitHub(token), chat=build_chat(), dry_run=dry_run)
 
 
 class Api:

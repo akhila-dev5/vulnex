@@ -84,9 +84,3 @@ Local trial: `VULNEX_API_URL=... VULNEX_AUTOMATION_KEY=... AZL_TEST_TOKEN=... py
 | Safety guards, PR client, titles | `pr.py` |
 | One job from start to PR | `runner.py` |
 | Worker (talks to the API) | `__main__.py` |
-
-## Who the PR shows as
-
-A PR, its comments and its pushes are made as **the owner of `AZL_TEST_TOKEN`**. The commit author is always "Vulnex Security Servicing Account", but GitHub shows the token's owner as the PR author. So `AZL_TEST_TOKEN` must be created while signed in to the Vulnex automation GitHub account (the account must have write access to azurelinux-test), not your personal one.
-
-Set the variable `VULNEX_AUTOMATION_GITHUB_USER` to that account's login. The worker then refuses to raise a PR if the token belongs to anyone else, and logs "Raising the PR as GitHub user ..." on every run.

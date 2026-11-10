@@ -4,12 +4,11 @@ name: Vulnex automation
 # CVEs and raises ONE draft PR in akhila-dev5/azurelinux-test (and nowhere else).
 #
 # Secrets and variables (Settings > Secrets and variables > Actions):
-#   secret   AZL_TEST_TOKEN          a token that can push branches and open PRs in azurelinux-test
-#                                    (fine-grained: only that repository; Contents and Pull requests: write)
+#   secret   AZL_TEST_TOKEN          a token created while signed in as the automation GitHub account, able to push
+#                                    branches and open PRs in azurelinux-test (see docs/10-automation.md)
 #   variable VULNEX_AUTOMATION_GITHUB_LOGIN  the automation account's GitHub username; the token must belong to it
 #   secret   VULNEX_AUTOMATION_KEY   the same value as VULNEX_AUTOMATION_KEY on the Render backend
 #   variable VULNEX_API_URL          e.g. https://vulnex-1k5h.onrender.com
-#   variable VULNEX_AUTOMATION_GITHUB_USER   the GitHub login PRs must be raised as; any other token owner is refused
 #   secret   VULNEX_AI_API_KEY       optional; without it the built-in GITHUB_TOKEN uses GitHub Models (free)
 on:
   schedule:
@@ -53,7 +52,6 @@ jobs:
           VULNEX_AUTOMATION_KEY: ${{ secrets.VULNEX_AUTOMATION_KEY }}
           AZL_TEST_TOKEN: ${{ secrets.AZL_TEST_TOKEN }}
           VULNEX_AUTOMATION_GITHUB_LOGIN: ${{ vars.VULNEX_AUTOMATION_GITHUB_LOGIN }}
-          VULNEX_AUTOMATION_GITHUB_USER: ${{ vars.VULNEX_AUTOMATION_GITHUB_USER }}
           VULNEX_AI_API_KEY: ${{ secrets.VULNEX_AI_API_KEY }}
           VULNEX_AI_BASE_URL: ${{ vars.VULNEX_AI_BASE_URL }}
           VULNEX_AI_MODEL: ${{ vars.VULNEX_AI_MODEL }}
