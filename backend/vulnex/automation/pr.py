@@ -40,6 +40,33 @@ def assert_remote(url: str) -> None:
         raise TargetRepoError(f"Refusing to use remote {bare!r}")
 
 
+def check_token_owner(token: str, expected_login: str = "", session=None) -> str:
+    """Make sure the token belongs to the automation account, not to a person.
+
+    GitHub credits PRs, descriptions and comments to whoever owns the token, so a token made
+    from the repository owner's own account makes Vulnex's PRs look like that person wrote them.
+    ``expected_login`` is the automation account's GitHub username
+    (VULNEX_AUTOMATION_GITHUB_LOGIN). When it is not set, the repository owner's own login is
+    refused. Returns the token owner's login.
+    """
+    http = session or requests
+    response = http.get(f"{API}/user", headers={"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json"}, timeout=30)
+    if response.status_code != 200:
+        raise TargetRepoError(f"GitHub did not accept AZL_TEST_TOKEN ({response.status_code}). Is it expired or revoked?")
+    login = (response.json().get("login") or "").lower()
+    owner = ALLOWED_REPO.split("/")[0].lower()
+    expected = (expected_login or "").strip().lower()
+    if expected and login != expected:
+        raise TargetRepoError(f"AZL_TEST_TOKEN belongs to {login!r}, but VULNEX_AUTOMATION_GITHUB_LOGIN is {expected!r}. Create the token while signed in as the automation account.")
+    if not expected and login == owner:
+        raise TargetRepoError(
+            f"AZL_TEST_TOKEN belongs to {login!r}, the owner of {ALLOWED_REPO}, so every PR would be credited to that person. "
+            "Create the token while signed in as the automation account (see docs/10-automation.md), "
+            "or set VULNEX_AUTOMATION_GITHUB_LOGIN to this login if that is intended."
+        )
+    return login
+
+
 def assert_head_branch(name: str) -> None:
     """Automation only pushes to its own topic branches, never to a base branch."""
     if not name.startswith("topic/") or name in ALLOWED_BASES:

@@ -91,6 +91,19 @@ def upstream_patch_url(link: str) -> str:
     return link
 
 
+def reference_url(link: str, patch_text: str) -> str:
+    """The upstream ``.patch`` URL with the full 40-character commit SHA.
+
+    A link may carry a short SHA. The downloaded patch starts "From <full sha> ...", so the
+    short one is swapped for it. Links with no commit (a pull request) are kept as they are.
+    """
+    url = upstream_patch_url(link)
+    head = re.match(r"From ([0-9a-f]{40})\b", patch_text)
+    if head:
+        url = re.sub(r"(?<=/)[0-9a-f]{7,40}(?=(\.patch|\.diff)?$)", head.group(1), url)
+    return url
+
+
 def patch_name(link: str, cve_id: str) -> str:
     sha = re.search(r"\b([0-9a-f]{7,40})\b", link or "")
     return f"{sha.group(1) if sha else cve_id}.patch"
@@ -195,7 +208,7 @@ def run_job(job: Job, deps: Deps, work: Path) -> Result:
                 if not ported.ok:
                     raise JobError("Backport failed: " + "; ".join(ported.problems))
                 outcome.method, outcome.explanation = "backported", ported.explanation
-            patching.make_patch(src, cve.cve_id, spec_dir)
+            patching.make_patch(src, cve.cve_id, spec_dir, reference_url(cve.patch_link, outcome.upstream_patch))
             outcome.ok = True
         except (JobError, patching.PatchError, requests.RequestException) as error:
             outcome.message = str(error)

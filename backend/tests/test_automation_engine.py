@@ -13,7 +13,7 @@ from test_access import AUTO, FINDING, client, admin  # noqa: F401  (shared fixt
 
 from vulnex import config
 from vulnex.automation import patching, pr, specfile
-from vulnex.automation.runner import CveJob, Deps, Job, JobError, build_body, patch_name, run_job, upstream_patch_url
+from vulnex.automation.runner import CveJob, Deps, Job, JobError, build_body, patch_name, reference_url, run_job, upstream_patch_url
 
 WHEN = datetime(2026, 11, 10, tzinfo=timezone.utc)
 MAIN_C = "int a(void) { return 1; }\n\nint b(void) {\n    return 2;\n}\n\nint c(void) { return 3; }\n"
@@ -145,6 +145,28 @@ def test_upstream_links_become_raw_patch_urls():
     assert patch_name("https://github.com/o/r/commit/abcdef1234", "CVE-1") == "abcdef1234.patch"
 
 
+FULL = "52ca1113d651127f89477a8763f86ab20f645e1d"
+
+
+def test_reference_url_uses_the_full_commit_sha():
+    mbox = f"From {FULL} Mon Sep 17 00:00:00 2001\nSubject: x\n"
+    assert reference_url("https://github.com/o/r/commit/52ca111", mbox) == f"https://github.com/o/r/commit/{FULL}.patch"
+    assert reference_url(f"https://github.com/o/r/commit/{FULL}.patch", mbox) == f"https://github.com/o/r/commit/{FULL}.patch"
+    # no commit SHA to swap (a pull request): the link is used as it is
+    assert reference_url("https://github.com/o/r/pull/12", mbox) == "https://github.com/o/r/pull/12.patch"
+    assert reference_url("https://github.com/o/r/commit/52ca111", "no header") == "https://github.com/o/r/commit/52ca111.patch"
+
+
+def test_the_cve_patch_names_its_upstream_source_under_the_subject(world):
+    run_job(job(CveJob(**CLEAN_CVE)), world.deps(), world.work)
+    text = (world.work / "repo/SPECS/demo/CVE-2026-0001.patch").read_text()
+    lines = text.splitlines()
+    subject = next(i for i, l in enumerate(lines) if l.startswith("Subject: [PATCH] Address CVE-2026-0001"))
+    assert lines[subject + 1].strip() == ""
+    assert lines[subject + 2] == "Upstream Patch Reference:   https://github.com/o/r/commit/aaaaaaa1.patch"
+    assert lines[subject + 3] == "---"
+
+
 # -- the guards -------------------------------------------------------------
 def test_severity_decides_the_base_branch_and_names():
     assert pr.base_branch_for(["high"]) == pr.base_branch_for(["critical", "low"]) == "fasttrack/3.0"
@@ -171,6 +193,36 @@ def test_automation_never_pushes_to_a_base_branch():
         with pytest.raises(pr.TargetRepoError):
             pr.assert_head_branch(bad)
     pr.assert_head_branch("topic/demo/3.0/CVE-2026-0001")
+
+
+class _User:
+    def __init__(self, login, status=200):
+        self.login, self.status = login, status
+
+    def get(self, url, **kwargs):
+        me = self
+
+        class R:
+            status_code = me.status
+
+            def json(self):
+                return {"login": me.login}
+        return R()
+
+
+def test_a_token_from_the_repo_owner_is_refused_so_prs_are_not_credited_to_a_person():
+    with pytest.raises(pr.TargetRepoError, match="credited to that person"):
+        pr.check_token_owner("t", "", _User("akhila-dev5"))
+    assert pr.check_token_owner("t", "", _User("vulnex-sec")) == "vulnex-sec"
+
+
+def test_a_token_must_belong_to_the_named_automation_account():
+    assert pr.check_token_owner("t", "Vulnex-Sec", _User("vulnex-sec")) == "vulnex-sec"
+    with pytest.raises(pr.TargetRepoError, match="belongs to 'someone'"):
+        pr.check_token_owner("t", "vulnex-sec", _User("someone"))
+    assert pr.check_token_owner("t", "akhila-dev5", _User("akhila-dev5")) == "akhila-dev5"  # deliberate choice
+    with pytest.raises(pr.TargetRepoError, match="did not accept"):
+        pr.check_token_owner("t", "", _User("x", status=401))
 
 
 class _Session:
