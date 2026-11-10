@@ -7,9 +7,10 @@ import { StatusPill } from "../components/StatusPill";
 import { formatDayMonth, severityLabel, severityTone } from "../lib/labels";
 import { hrefFor } from "../lib/route";
 
-type AutomationRequestRow = { id: number; cve_ids: string[]; mode: "new_pr" | "existing_pr"; pr_number: string; status: string; requested_by: string };
+type AutomationRequestRow = { id: number; cve_ids: string[]; mode: "new_pr" | "existing_pr"; pr_number: string; status: string; requested_by: string; pr_url?: string; message?: string };
 type Group = AutomationPackage & {
   requests: AutomationRequestRow[];
+  busy?: boolean;
 };
 type AutomationList = { owner: string; total: number; packages: Group[] };
 
@@ -91,14 +92,26 @@ export function AutomationPage() {
                 {group.package_version} · branch <code>{group.branch}</code> · {group.items.length} CVE{group.items.length === 1 ? "" : "s"}
               </small>
             </div>
-            <button className="btn primary" onClick={() => setSelected(group)} aria-label={`Automate ${group.package_name}`}>
-              <Bot size={14} aria-hidden="true" /> Automate
+            <button
+              className="btn primary"
+              disabled={group.busy}
+              title={group.busy ? "A request for this package is queued or running" : undefined}
+              onClick={() => setSelected(group)}
+              aria-label={`Automate ${group.package_name}`}
+            >
+              <Bot size={14} aria-hidden="true" /> {group.busy ? "In progress" : "Automate"}
             </button>
           </div>
           {group.requests[0] && (
             <p className="automation-last">
               Last request: {group.requests[0].cve_ids.length} CVE{group.requests[0].cve_ids.length === 1 ? "" : "s"},{" "}
               {group.requests[0].mode === "new_pr" ? "new PR" : `PR #${group.requests[0].pr_number}`} · {group.requests[0].status}
+              {group.requests[0].pr_url && (
+                <>
+                  {" "}· <a href={group.requests[0].pr_url} target="_blank" rel="noreferrer">Open PR</a>
+                </>
+              )}
+              {group.requests[0].message && group.requests[0].status !== "done" && <> · {group.requests[0].message}</>}
             </p>
           )}
           <details open>

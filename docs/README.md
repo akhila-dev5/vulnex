@@ -13,5 +13,6 @@ Short notes that explain how Vulnex works, one topic per file. Read them in orde
 | 7 | [Deployment](07-deployment.md) | Render, Netlify, Supabase, GitHub Actions, and every setting |
 | 8 | [Technologies](08-technologies.md) | Every tool used and why it was chosen |
 | 9 | [Running it locally](09-running-locally.md) | Install, run, test, retake the screenshots |
+| 10 | [Automation](10-automation.md) | How Automate patches CVEs and raises a draft PR in azurelinux-test, and the safety rules |
 
 Screenshots used in these notes live in [`images/`](images/). Run `make screenshots` to retake them.

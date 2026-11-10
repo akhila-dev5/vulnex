@@ -534,6 +534,18 @@ describe("Automation page", () => {
     expect(JSON.parse(String(call.init?.body))).toMatchObject({ mode: "existing_pr", pr_number: "42" });
   });
 
+  it("disables Automate while a request for the package is queued or running, and links the PR when done", async () => {
+    const busy = { ...group, busy: true, requests: [{ id: 1, cve_ids: ["CVE-2026-1001"], mode: "new_pr", pr_number: "", status: "running", requested_by: "x" }] };
+    vi.stubGlobal("fetch", stubFetch({ "/automation": { owner: "o", total: 2, packages: [busy] } }).fn);
+    const first = renderWith(developerContext, <AutomationPage />);
+    expect(await screen.findByRole("button", { name: "Automate curl" })).toBeDisabled();
+    first.unmount();
+    const finished = { ...group, requests: [{ id: 1, cve_ids: ["CVE-2026-1001"], mode: "new_pr", pr_number: "9", status: "done", requested_by: "x", pr_url: "https://github.com/akhila-dev5/azurelinux-test/pull/9" }] };
+    vi.stubGlobal("fetch", stubFetch({ "/automation": { owner: "o", total: 2, packages: [finished] } }).fn);
+    renderWith(developerContext, <AutomationPage />);
+    expect(await screen.findByRole("link", { name: "Open PR" })).toHaveAttribute("href", "https://github.com/akhila-dev5/azurelinux-test/pull/9");
+  });
+
   it("will not queue with no CVE ticked", async () => {
     vi.stubGlobal("fetch", stubFetch(list).fn);
     const user = userEvent.setup();
