@@ -1,6 +1,7 @@
-# Render Blueprint — live Vulnex console with React UI and FastAPI API.
+# Render Blueprint — live Vulnex console with React UI and the .NET API.
 #
-# One FastAPI/uvicorn process serves the API and the Vite-built React interface.
+# One Docker service (see ./Dockerfile): the ASP.NET Core API serves the Vite-built React
+# interface, and the Python engine (scanner, enrichment) runs beside it as a subprocess.
 # Data: with DATABASE_URL set (Supabase Postgres) triage comments, disputes and PR
 # links persist across deploys; without it the app falls back to the SQLite snapshot
 # in the repo, which resets on every deploy. Render free instances may sleep while idle.
@@ -12,17 +13,14 @@
 services:
   - type: web
     name: vulnex
-    runtime: python
+    runtime: docker
     plan: free
     region: oregon
-    rootDir: .
-    buildCommand: cd frontend && npm install && npm run build && cd ../backend && pip install -r requirements.txt
-    startCommand: cd backend && uvicorn vulnex.api:app --host 0.0.0.0 --port $PORT
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
     healthCheckPath: /api/health
     autoDeployTrigger: checksPass
     envVars:
-      - key: PYTHON_VERSION
-        value: "3.11.9"
       # Google is the only admin sign-in method. Set the OAuth client's callback to
       # this service's /api/auth/google/callback.
       - key: VULNEX_ADMIN_EMAIL
