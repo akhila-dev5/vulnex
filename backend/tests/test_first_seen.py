@@ -1,10 +1,8 @@
 """Each finding remembers when it was first scanned, and new affected CVEs lead the list."""
 
 import pytest
-from fastapi.testclient import TestClient
 
 from vulnex import config, db
-from vulnex.api import app
 
 COLUMNS = (
     "package_version spec_path severity cvss_score cvss_vector confidence description fixed_version "
@@ -95,7 +93,3 @@ def test_newest_affected_cves_lead_then_severity_then_the_rest(conn):
     assert [r["cve_id"] for r in rows] == ["CVE-2024-0004", "CVE-2024-0003", "CVE-2024-0001", "CVE-2024-0002"]
 
 
-def test_the_api_returns_the_scanned_date(conn):
-    _scan(conn, "2026-11-05T06:00:00Z", lambda s: [_row(s, "CVE-2024-0001")])
-    items = TestClient(app).get("/api/findings?limit=5").json()["items"]
-    assert items[0]["first_seen"] == "2026-11-05T06:00:00Z"

@@ -1,0 +1,65 @@
+{
+ "body": {
+  "items": [
+   {
+    "branch": "3.0",
+    "epoch": 0,
+    "evr": "1.24.1-2",
+    "finding_counts": {},
+    "group_name": "Applications",
+    "id": 4,
+    "is_primary": 1,
+    "license": "MIT",
+    "name": "golang",
+    "patch_count": 1,
+    "release": "2",
+    "scan_id": 1,
+    "source0_url": "https://example.org/golang-1.24.1.tar.gz",
+    "source_urls": [
+     "https://example.org/golang-1.24.1.tar.gz"
+    ],
+    "spec_path": "SPECS/golang/golang.spec",
+    "spec_url": "https://github.com/akhila-dev5/azurelinux-test/blob/3.0/SPECS/golang/golang.spec",
+    "summary": "golang summary",
+    "tarball_available": 1,
+    "tarball_name": "golang-1.24.1.tar.gz",
+    "tarball_url": "https://blob/golang-1.24.1.tar.gz",
+    "url": "https://example.org/golang",
+    "version": "1.24.1"
+   },
+   {
+    "branch": "3.0",
+    "epoch": 0,
+    "evr": "1.22.9-2",
+    "finding_counts": {
+     "affected": 1
+    },
+    "group_name": "Applications",
+    "id": 5,
+    "is_primary": 0,
+    "license": "MIT",
+    "name": "golang-1.22",
+    "patch_count": 1,
+    "release": "2",
+    "scan_id": 1,
+    "source0_url": "https://example.org/golang-1.22-1.22.9.tar.gz",
+    "source_urls": [
+     "https://example.org/golang-1.22-1.22.9.tar.gz"
+    ],
+    "spec_path": "SPECS/golang-1.22/golang-1.22.spec",
+    "spec_url": "https://github.com/akhila-dev5/azurelinux-test/blob/3.0/SPECS/golang-1.22/golang-1.22.spec",
+    "summary": "golang-1.22 summary",
+    "tarball_available": 1,
+    "tarball_name": "golang-1.22-1.22.9.tar.gz",
+    "tarball_url": "https://blob/golang-1.22-1.22.9.tar.gz",
+    "url": "https://example.org/golang-1.22",
+    "version": "1.22.9"
+   }
+  ],
+  "limit": 2,
+  "page": 2,
+  "total": 4
+ },
+ "path": "/api/packages?branch=3.0&limit=2&page=2",
+ "status": 200
+}

@@ -1,0 +1,18 @@
+{
+ "body": {
+  "items": [
+   {
+    "author": "gurujuakhila.dev@gmail.com",
+    "body": "looks real",
+    "branch": "3.0",
+    "cve_id": "CVE-2024-0001",
+    "id": 1,
+    "kind": "comment",
+    "spec_path": "SPECS/alpha/alpha.spec"
+   }
+  ],
+  "total": 1
+ },
+ "path": "/api/triage/comments?cve_id=CVE-2024-0001&branch=3.0&spec_path=SPECS/alpha/alpha.spec",
+ "status": 200
+}

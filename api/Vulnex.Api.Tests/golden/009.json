@@ -1,0 +1,346 @@
+{
+ "body": {
+  "branch": "3.0",
+  "epoch": 0,
+  "evr": "1.2.3-2",
+  "findings": [
+   {
+    "advisory_id": "ADV-CVE-2024-0001",
+    "affected_files": [
+     "src/a.c",
+     "src/b.c"
+    ],
+    "assignment": {
+     "assignee_email": "vulnexsecurityautomation@gmail.com",
+     "comments": [
+      {
+       "assignment_id": 1,
+       "author": "gurujuakhila.dev@gmail.com",
+       "body": "on it",
+       "id": 1
+      }
+     ],
+     "cve_id": "CVE-2024-0001",
+     "id": 1,
+     "notes": "please fix",
+     "package_name": "alpha",
+     "status": "queued",
+     "target_repo": "akhila-dev5/azurelinux-test"
+    },
+    "azl_fixed_basis": null,
+    "azl_fixed_version": null,
+    "branch": "3.0",
+    "confidence": 0.9,
+    "corroborating_sources": [
+     "debian"
+    ],
+    "cve_id": "CVE-2024-0001",
+    "cvss_score": 7.5,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N",
+    "deep": {
+     "affected_files": [
+      "src/a.c",
+      "src/b.c"
+     ],
+     "backport_patches": [],
+     "branch": "3.0",
+     "cve_id": "CVE-2024-0001",
+     "notes": [
+      "Files listed are the paths touched by the upstream fix commit for this CVE.",
+      "Source tarball for this package: alpha-1.2.3.tar.gz."
+     ],
+     "package_name": "alpha",
+     "package_version": "1.2.3-2",
+     "spec_path": "SPECS/alpha/alpha.spec",
+     "spec_url": "https://github.com/akhila-dev5/azurelinux-test/blob/3.0/SPECS/alpha/alpha.spec",
+     "tarball": {
+      "available": 1,
+      "name": "alpha-1.2.3.tar.gz",
+      "url": "https://blob/alpha-1.2.3.tar.gz"
+     },
+     "upstream_fixed_version": "1.2.4"
+    },
+    "description": "CVE-2024-0001 in alpha",
+    "dispute": null,
+    "evidence": [
+     {
+      "detail": "1.2.3 < 1.2.4",
+      "kind": "version"
+     }
+    ],
+    "fix_source": null,
+    "fixed_in": null,
+    "fixed_in_basis": null,
+    "fixed_version": "1.2.4",
+    "id": 1,
+    "links": [
+     {
+      "label": "Ubuntu",
+      "url": "https://ubuntu.com/security/CVE-2024-0001"
+     },
+     {
+      "label": "Debian",
+      "url": "https://security-tracker.debian.org/tracker/CVE-2024-0001"
+     },
+     {
+      "label": "Red Hat",
+      "url": "https://access.redhat.com/security/cve/CVE-2024-0001"
+     },
+     {
+      "label": "Mitre",
+      "url": "https://www.cve.org/CVERecord?id=CVE-2024-0001"
+     },
+     {
+      "label": "OSV",
+      "url": "https://osv.dev/vulnerability/CVE-2024-0001"
+     },
+     {
+      "label": "NVD",
+      "url": "https://nvd.nist.gov/vuln/detail/CVE-2024-0001"
+     }
+    ],
+    "package_name": "alpha",
+    "package_version": "1.2.3-2",
+    "patch_availability": {
+     "ai_verdict": "Patch Available",
+     "analysis": [
+      "Upstream fix commit: https://github.com/o/alpha/commit/abc1",
+      "Upstream fixed version 1.2.4 is not yet shipped on 3.0."
+     ],
+     "applicable": true,
+     "available": true,
+     "available_since": "",
+     "final_verdict": "Patch Available",
+     "overridden": false,
+     "patch_link": "https://github.com/o/alpha/commit/abc1",
+     "possible_links": [
+      "https://github.com/o/alpha/commit/abc1"
+     ],
+     "source": "upstream-fix"
+    },
+    "patch_name": null,
+    "patch_status": null,
+    "raw_sources": [],
+    "references": [
+     {
+      "source": "osv",
+      "url": "https://github.com/o/alpha/commit/abc1"
+     },
+     {
+      "source": "nvd",
+      "url": "https://example.org/advisory"
+     }
+    ],
+    "scan_id": 1,
+    "severity": "critical",
+    "source": "osv",
+    "spec_path": "SPECS/alpha/alpha.spec",
+    "status": "affected",
+    "triage": {
+     "available_since": "",
+     "branch": "3.0",
+     "cve_id": "CVE-2024-0001",
+     "final_verdict": "",
+     "github_pr_number": "7",
+     "github_pr_set_at": "2026-02-01T00:00:00+00:00",
+     "github_pr_set_by": "gurujuakhila.dev@gmail.com",
+     "github_pr_url": "https://github.com/akhila-dev5/azurelinux-test/pull/7",
+     "id": 1,
+     "owner": "dev1.vulnex@gmail.com",
+     "package_name": null,
+     "patch_link": "",
+     "qualys_ids": "",
+     "resolution_status": "in_progress",
+     "spec_path": "SPECS/alpha/alpha.spec",
+     "triage_status": "open",
+     "vuln_id": ""
+    },
+    "upstream_fix": "https://github.com/o/alpha/commit/abc1"
+   },
+   {
+    "advisory_id": "ADV-CVE-2024-0003",
+    "affected_files": [
+     "src/a.c",
+     "src/b.c"
+    ],
+    "assignment": null,
+    "azl_fixed_basis": "changelog",
+    "azl_fixed_version": "1.2.3-2",
+    "branch": "3.0",
+    "confidence": 0.9,
+    "corroborating_sources": [
+     "debian"
+    ],
+    "cve_id": "CVE-2024-0003",
+    "cvss_score": 7.5,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N",
+    "deep": {
+     "affected_files": [
+      "src/a.c",
+      "src/b.c"
+     ],
+     "backport_patches": [
+      {
+       "filename": "CVE-2024-0003.patch",
+       "present": null,
+       "url": "https://github.com/akhila-dev5/azurelinux-test/blob/3.0/SPECS/alpha/CVE-2024-0003.patch"
+      }
+     ],
+     "branch": "3.0",
+     "cve_id": "CVE-2024-0003",
+     "notes": [
+      "Files listed are the paths touched by the upstream fix commit for this CVE.",
+      "Source tarball for this package: alpha-1.2.3.tar.gz."
+     ],
+     "package_name": "alpha",
+     "package_version": "1.2.3-2",
+     "spec_path": "SPECS/alpha/alpha.spec",
+     "spec_url": "https://github.com/akhila-dev5/azurelinux-test/blob/3.0/SPECS/alpha/alpha.spec",
+     "tarball": {
+      "available": 1,
+      "name": "alpha-1.2.3.tar.gz",
+      "url": "https://blob/alpha-1.2.3.tar.gz"
+     },
+     "upstream_fixed_version": "1.2.4"
+    },
+    "description": "CVE-2024-0003 in alpha",
+    "dispute": null,
+    "evidence": [
+     {
+      "detail": "1.2.3 < 1.2.4",
+      "kind": "version"
+     }
+    ],
+    "fix_source": "patch",
+    "fixed_in": "1.2.3-2",
+    "fixed_in_basis": "changelog",
+    "fixed_version": "1.2.4",
+    "id": 4,
+    "links": [
+     {
+      "label": "Ubuntu",
+      "url": "https://ubuntu.com/security/CVE-2024-0003"
+     },
+     {
+      "label": "Debian",
+      "url": "https://security-tracker.debian.org/tracker/CVE-2024-0003"
+     },
+     {
+      "label": "Red Hat",
+      "url": "https://access.redhat.com/security/cve/CVE-2024-0003"
+     },
+     {
+      "label": "Mitre",
+      "url": "https://www.cve.org/CVERecord?id=CVE-2024-0003"
+     },
+     {
+      "label": "OSV",
+      "url": "https://osv.dev/vulnerability/CVE-2024-0003"
+     },
+     {
+      "label": "NVD",
+      "url": "https://nvd.nist.gov/vuln/detail/CVE-2024-0003"
+     }
+    ],
+    "package_name": "alpha",
+    "package_version": "1.2.3-2",
+    "patch_availability": {
+     "ai_verdict": "Not applicable",
+     "analysis": [
+      "Finding is 'patched', not an open exposure \u2014 patch availability does not apply.",
+      "Upstream fix commit: https://github.com/o/alpha/commit/abc3",
+      "Upstream fixed version 1.2.4 is not yet shipped on 3.0."
+     ],
+     "applicable": false,
+     "available": true,
+     "available_since": "",
+     "final_verdict": "Not applicable",
+     "overridden": false,
+     "patch_link": "https://github.com/o/alpha/commit/abc3",
+     "possible_links": [
+      "https://github.com/o/alpha/commit/abc3"
+     ],
+     "source": "upstream-fix"
+    },
+    "patch_name": "CVE-2024-0003.patch",
+    "patch_status": "applied",
+    "raw_sources": [],
+    "references": [
+     {
+      "source": "osv",
+      "url": "https://github.com/o/alpha/commit/abc3"
+     },
+     {
+      "source": "nvd",
+      "url": "https://example.org/advisory"
+     }
+    ],
+    "scan_id": 1,
+    "severity": "medium",
+    "source": "osv",
+    "spec_path": "SPECS/alpha/alpha.spec",
+    "status": "patched",
+    "triage": null,
+    "upstream_fix": "https://github.com/o/alpha/commit/abc3"
+   }
+  ],
+  "group_name": "Applications",
+  "id": 1,
+  "is_primary": 1,
+  "license": "MIT",
+  "name": "alpha",
+  "patch_count": 1,
+  "patches": [
+   {
+    "branch": "3.0",
+    "comment": null,
+    "cve_ids": [
+     "CVE-2024-0003"
+    ],
+    "file_present": 1,
+    "filename": "CVE-2024-0003.patch",
+    "id": 1,
+    "is_nopatch": 0,
+    "package_name": "alpha",
+    "scan_id": 1,
+    "spec_path": "SPECS/alpha/alpha.spec",
+    "status": "applied",
+    "tag": "Patch0"
+   }
+  ],
+  "release": "2",
+  "scan_id": 1,
+  "source0_url": "https://example.org/alpha-1.2.3.tar.gz",
+  "source_urls": [
+   "https://example.org/alpha-1.2.3.tar.gz"
+  ],
+  "spec_path": "SPECS/alpha/alpha.spec",
+  "spec_url": "https://github.com/akhila-dev5/azurelinux-test/blob/3.0/SPECS/alpha/alpha.spec",
+  "summary": "alpha summary",
+  "tarball_available": 1,
+  "tarball_name": "alpha-1.2.3.tar.gz",
+  "tarball_url": "https://blob/alpha-1.2.3.tar.gz",
+  "url": "https://example.org/alpha",
+  "variants": [
+   {
+    "branch": "3.0",
+    "evr": "1.2.3-2",
+    "is_primary": 1,
+    "release": "2",
+    "spec_path": "SPECS/alpha/alpha.spec",
+    "version": "1.2.3"
+   },
+   {
+    "branch": "4.0",
+    "evr": "2.0.0-2",
+    "is_primary": 1,
+    "release": "2",
+    "spec_path": "SPECS/alpha/alpha.spec",
+    "version": "2.0.0"
+   }
+  ],
+  "version": "1.2.3"
+ },
+ "path": "/api/packages/alpha",
+ "status": 200
+}

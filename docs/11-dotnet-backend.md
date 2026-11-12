@@ -27,7 +27,7 @@ browser ──► .NET API (api/Vulnex.Api) ──► PostgreSQL (schema owned b
 | File | Role |
 |------|------|
 | `Program.cs` | Host setup: CORS, gzip, JSON `{"detail": …}` errors, cache clearing on writes, React files |
-| `Endpoints.cs` | All ~40 routes, ported one-to-one from `backend/vulnex/api.py` |
+| `Endpoints.cs` | All ~40 routes, ported one-to-one from the removed `backend/vulnex/api.py` |
 | `Repo.cs`, `Sql.cs` | SQL ported from `db.py`; thin ADO.NET helper with named parameters |
 | `Triage.cs` | Patch availability, Deep view, tracker links (from `triage.py`) |
 | `Auth.cs`, `Config.cs` | Roles, in-memory sessions, Google OAuth, settings |
@@ -36,9 +36,17 @@ browser ──► .NET API (api/Vulnex.Api) ──► PostgreSQL (schema owned b
 
 ## Testing
 
-`dotnet test api/Vulnex.sln` runs the unit tests. CI also starts the Python API and the .NET API
-against one PostgreSQL database and runs `scripts/contract_check.py`, which compares their JSON
-for the read endpoints. Python's `api.py` is kept until the cut-over so this comparison stays possible.
+The old Python API (`api.py`, `auth.py`, `cache.py`) and its tests are **deleted** in this migration, so
+what runs on `dev` is only the .NET API. Its behaviour is pinned by tests in `api/Vulnex.Api.Tests`:
+
+* `GoldenTests`: every read endpoint must answer exactly the JSON recorded from the original Python API
+  (`golden/*.json`, 40 endpoints, recorded by `scripts/api_snapshots.py record` before the deletion).
+* `WorkflowTests` and `AutomationTests`: who may do what, claims, disputes, rescoring, the Automation
+  section and the worker's job endpoints (ported from the Python tests).
+* `CoreTests`: sessions, roles, tracker links, patch availability.
+
+They need a PostgreSQL database seeded with `python scripts/api_snapshots.py seed` and `DATABASE_URL` set;
+CI does this (see the `dotnet-api` job in `.github/workflows/ci.yml`).
 
 ## Trying it on `dev`
 

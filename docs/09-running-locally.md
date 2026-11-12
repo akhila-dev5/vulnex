@@ -2,7 +2,8 @@
 
 ## You need
 
-- Python 3.11 or newer
+- .NET 10 SDK (the API) and Python 3.11 or newer (the engine)
+- PostgreSQL (the API needs `DATABASE_URL`; there is no SQLite mode any more)
 - Node 22 (only to build or work on the frontend)
 
 ## Backend
@@ -10,7 +11,8 @@
 ```bash
 make install        # creates backend/.venv and installs dependencies
 make test           # backend tests
-make serve          # API on http://localhost:8000
+export DATABASE_URL=postgresql://...   # required
+make serve          # .NET API on http://localhost:8000
 ```
 
 Or by hand:
@@ -18,12 +20,12 @@ Or by hand:
 ```bash
 python3 -m venv backend/.venv
 backend/.venv/bin/python -m pip install -r backend/requirements-dev.txt
-cd backend
-python -m pytest -q
-python -m vulnex.cli serve --port 8000
+cd backend && python -m pytest -q && cd ..
+dotnet test api/Vulnex.sln          # needs DATABASE_URL seeded by scripts/api_snapshots.py
+VULNEX_PYTHON=$PWD/backend/.venv/bin/python VULNEX_BACKEND_DIR=$PWD/backend PORT=8000 dotnet run --project api/Vulnex.Api
 ```
 
-With no `DATABASE_URL`, the app reads `data/vulnex.db` (the bundled snapshot). Set `DATABASE_URL` to a PostgreSQL URL to use Postgres instead.
+The scanner and CLI still work on the SQLite file `data/vulnex.db` when `DATABASE_URL` is unset. Load that snapshot into PostgreSQL with `python -m vulnex.cli migrate-sqlite --only snapshot`. The API itself only talks to PostgreSQL.
 
 ## Frontend
 
@@ -52,7 +54,6 @@ A scan needs no credentials. A `GITHUB_TOKEN` only raises the GitHub rate limit.
 |---------|------|
 | `scan` | Run a scan and replace the snapshot |
 | `stats` | Print dashboard totals |
-| `serve` | Run the API (and the built frontend) |
 | `export` | Build the static GitHub Pages copy |
 | `fixed-cves` | Build or publish the fixed-CVE list |
 | `migrate-sqlite` | Copy the snapshot into PostgreSQL |

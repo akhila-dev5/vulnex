@@ -5,7 +5,6 @@ Examples::
     python -m vulnex.cli scan --branches 3.0 or 4.0
     python -m vulnex.cli scan --packages curl,openssl,sqlite --no-blobs
     python -m vulnex.cli stats
-    python -m vulnex.cli serve --port 8000
 """
 
 from __future__ import annotations
@@ -75,20 +74,6 @@ def _cmd_export(args: argparse.Namespace) -> int:
     summary = export_site(args.out or default_out_dir(), db_path=args.db)
     print(json.dumps(summary, indent=2))
     print(f"[vulnex] static site written to {summary['out_dir']}", flush=True)
-    return 0
-
-
-def _cmd_serve(args: argparse.Namespace) -> int:
-    import uvicorn
-
-    if args.db:
-        config.DB_PATH = Path(args.db)
-    uvicorn.run(
-        "vulnex.api:app",
-        host=args.host,
-        port=args.port,
-        reload=False,
-    )
     return 0
 
 
@@ -209,11 +194,6 @@ def build_parser() -> argparse.ArgumentParser:
     export.add_argument("--db", default=None)
     export.set_defaults(func=_cmd_export)
 
-    serve = sub.add_parser("serve", help="Serve the dashboard API")
-    serve.add_argument("--host", default="0.0.0.0")
-    serve.add_argument("--port", type=int, default=8000)
-    serve.add_argument("--db", default=None)
-    serve.set_defaults(func=_cmd_serve)
 
     vuln_data = sub.add_parser(
         "vuln-data",

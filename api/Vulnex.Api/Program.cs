@@ -127,3 +127,6 @@ sealed class MissingDatabase : IDbFactory
 {
     public DbConnection Open() => throw new DatabaseUnavailable("DATABASE_URL is not set.");
 }
+
+/// <summary>Lets the integration tests start the app in memory.</summary>
+public partial class Program { }

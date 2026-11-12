@@ -1,0 +1,199 @@
+{
+ "body": {
+  "items": [
+   {
+    "advisory_id": "ADV-CVE-2024-0001",
+    "affected_files": [
+     "src/a.c",
+     "src/b.c"
+    ],
+    "assignment": {
+     "assignee_email": "vulnexsecurityautomation@gmail.com",
+     "comments": [
+      {
+       "assignment_id": 1,
+       "author": "gurujuakhila.dev@gmail.com",
+       "body": "on it",
+       "id": 1
+      }
+     ],
+     "cve_id": "CVE-2024-0001",
+     "id": 1,
+     "notes": "please fix",
+     "package_name": "alpha",
+     "status": "queued",
+     "target_repo": "akhila-dev5/azurelinux-test"
+    },
+    "azl_fixed_basis": null,
+    "azl_fixed_version": null,
+    "branch": "4.0",
+    "confidence": 0.9,
+    "corroborating_sources": [
+     "debian"
+    ],
+    "cve_id": "CVE-2024-0001",
+    "cvss_score": 7.5,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N",
+    "description": "CVE-2024-0001 in alpha",
+    "dispute": null,
+    "evidence": [
+     {
+      "detail": "1.2.3 < 1.2.4",
+      "kind": "version"
+     }
+    ],
+    "fix_source": null,
+    "fixed_in": null,
+    "fixed_in_basis": null,
+    "fixed_version": "1.2.4",
+    "id": 2,
+    "package_name": "alpha",
+    "package_version": "1.2.3-2",
+    "patch_availability": {
+     "ai_verdict": "Patch Available",
+     "analysis": [
+      "Upstream fix commit: https://github.com/o/alpha/commit/abc1",
+      "Upstream fixed version 1.2.4 is not yet shipped on 4.0."
+     ],
+     "applicable": true,
+     "available": true,
+     "available_since": "",
+     "final_verdict": "Patch Available",
+     "overridden": false,
+     "patch_link": "https://github.com/o/alpha/commit/abc1",
+     "possible_links": [
+      "https://github.com/o/alpha/commit/abc1"
+     ],
+     "source": "upstream-fix"
+    },
+    "patch_name": null,
+    "patch_status": null,
+    "references": [
+     {
+      "source": "osv",
+      "url": "https://github.com/o/alpha/commit/abc1"
+     },
+     {
+      "source": "nvd",
+      "url": "https://example.org/advisory"
+     }
+    ],
+    "scan_id": 1,
+    "severity": "critical",
+    "source": "osv",
+    "spec_path": "SPECS/alpha/alpha.spec",
+    "status": "affected",
+    "triage": null,
+    "upstream_fix": "https://github.com/o/alpha/commit/abc1"
+   },
+   {
+    "advisory_id": "ADV-CVE-2024-0001",
+    "affected_files": [
+     "src/a.c",
+     "src/b.c"
+    ],
+    "assignment": {
+     "assignee_email": "vulnexsecurityautomation@gmail.com",
+     "comments": [
+      {
+       "assignment_id": 1,
+       "author": "gurujuakhila.dev@gmail.com",
+       "body": "on it",
+       "id": 1
+      }
+     ],
+     "cve_id": "CVE-2024-0001",
+     "id": 1,
+     "notes": "please fix",
+     "package_name": "alpha",
+     "status": "queued",
+     "target_repo": "akhila-dev5/azurelinux-test"
+    },
+    "azl_fixed_basis": null,
+    "azl_fixed_version": null,
+    "branch": "3.0",
+    "confidence": 0.9,
+    "corroborating_sources": [
+     "debian"
+    ],
+    "cve_id": "CVE-2024-0001",
+    "cvss_score": 7.5,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N",
+    "description": "CVE-2024-0001 in alpha",
+    "dispute": null,
+    "evidence": [
+     {
+      "detail": "1.2.3 < 1.2.4",
+      "kind": "version"
+     }
+    ],
+    "fix_source": null,
+    "fixed_in": null,
+    "fixed_in_basis": null,
+    "fixed_version": "1.2.4",
+    "id": 1,
+    "package_name": "alpha",
+    "package_version": "1.2.3-2",
+    "patch_availability": {
+     "ai_verdict": "Patch Available",
+     "analysis": [
+      "Upstream fix commit: https://github.com/o/alpha/commit/abc1",
+      "Upstream fixed version 1.2.4 is not yet shipped on 3.0."
+     ],
+     "applicable": true,
+     "available": true,
+     "available_since": "",
+     "final_verdict": "Patch Available",
+     "overridden": false,
+     "patch_link": "https://github.com/o/alpha/commit/abc1",
+     "possible_links": [
+      "https://github.com/o/alpha/commit/abc1"
+     ],
+     "source": "upstream-fix"
+    },
+    "patch_name": null,
+    "patch_status": null,
+    "references": [
+     {
+      "source": "osv",
+      "url": "https://github.com/o/alpha/commit/abc1"
+     },
+     {
+      "source": "nvd",
+      "url": "https://example.org/advisory"
+     }
+    ],
+    "scan_id": 1,
+    "severity": "critical",
+    "source": "osv",
+    "spec_path": "SPECS/alpha/alpha.spec",
+    "status": "affected",
+    "triage": {
+     "available_since": "",
+     "branch": "3.0",
+     "cve_id": "CVE-2024-0001",
+     "final_verdict": "",
+     "github_pr_number": "7",
+     "github_pr_set_at": "2026-02-01T00:00:00+00:00",
+     "github_pr_set_by": "gurujuakhila.dev@gmail.com",
+     "github_pr_url": "https://github.com/akhila-dev5/azurelinux-test/pull/7",
+     "id": 1,
+     "owner": "dev1.vulnex@gmail.com",
+     "package_name": null,
+     "patch_link": "",
+     "qualys_ids": "",
+     "resolution_status": "in_progress",
+     "spec_path": "SPECS/alpha/alpha.spec",
+     "triage_status": "open",
+     "vuln_id": ""
+    },
+    "upstream_fix": "https://github.com/o/alpha/commit/abc1"
+   }
+  ],
+  "limit": 100,
+  "page": 1,
+  "total": 2
+ },
+ "path": "/api/findings?severity=critical",
+ "status": 200
+}

@@ -1,0 +1,33 @@
+{
+ "body": {
+  "counts": {
+   "approved": 0,
+   "pending": 1,
+   "rejected": 0
+  },
+  "items": [
+   {
+    "branch": "3.0",
+    "cve_id": "CVE-2024-0002",
+    "decided_at": null,
+    "decided_by": "",
+    "decision_note": "",
+    "first_unaffected_version": "1.0",
+    "id": 1,
+    "never_applicable": 0,
+    "package_name": "beta",
+    "package_version": "1.2.3-2",
+    "reason": "not reachable",
+    "requested_by": "dev1.vulnex@gmail.com",
+    "severity": "high",
+    "spec_path": "SPECS/beta/beta.spec",
+    "status": "pending"
+   }
+  ],
+  "limit": 50,
+  "page": 1,
+  "total": 1
+ },
+ "path": "/api/disputes?status=pending",
+ "status": 200
+}

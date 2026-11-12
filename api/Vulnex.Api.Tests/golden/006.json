@@ -1,0 +1,149 @@
+{
+ "body": {
+  "items": [
+   {
+    "branch": "3.0",
+    "epoch": 0,
+    "evr": "1.2.3-2",
+    "finding_counts": {
+     "affected": 1
+    },
+    "group_name": "Applications",
+    "id": 1,
+    "is_primary": 1,
+    "license": "MIT",
+    "name": "alpha",
+    "patch_count": 1,
+    "release": "2",
+    "scan_id": 1,
+    "source0_url": "https://example.org/alpha-1.2.3.tar.gz",
+    "source_urls": [
+     "https://example.org/alpha-1.2.3.tar.gz"
+    ],
+    "spec_path": "SPECS/alpha/alpha.spec",
+    "spec_url": "https://github.com/akhila-dev5/azurelinux-test/blob/3.0/SPECS/alpha/alpha.spec",
+    "summary": "alpha summary",
+    "tarball_available": 1,
+    "tarball_name": "alpha-1.2.3.tar.gz",
+    "tarball_url": "https://blob/alpha-1.2.3.tar.gz",
+    "url": "https://example.org/alpha",
+    "version": "1.2.3"
+   },
+   {
+    "branch": "4.0",
+    "epoch": 0,
+    "evr": "2.0.0-2",
+    "finding_counts": {
+     "affected": 1
+    },
+    "group_name": "Applications",
+    "id": 2,
+    "is_primary": 1,
+    "license": "MIT",
+    "name": "alpha",
+    "patch_count": 1,
+    "release": "2",
+    "scan_id": 1,
+    "source0_url": "https://example.org/alpha-2.0.0.tar.gz",
+    "source_urls": [
+     "https://example.org/alpha-2.0.0.tar.gz"
+    ],
+    "spec_path": "SPECS/alpha/alpha.spec",
+    "spec_url": "https://github.com/akhila-dev5/azurelinux-test/blob/4.0/SPECS/alpha/alpha.spec",
+    "summary": "alpha summary",
+    "tarball_available": 1,
+    "tarball_name": "alpha-2.0.0.tar.gz",
+    "tarball_url": "https://blob/alpha-2.0.0.tar.gz",
+    "url": "https://example.org/alpha",
+    "version": "2.0.0"
+   },
+   {
+    "branch": "3.0",
+    "epoch": 0,
+    "evr": "1.2.3-2",
+    "finding_counts": {
+     "affected": 1
+    },
+    "group_name": "Applications",
+    "id": 3,
+    "is_primary": 1,
+    "license": "MIT",
+    "name": "beta",
+    "patch_count": 1,
+    "release": "2",
+    "scan_id": 1,
+    "source0_url": "https://example.org/beta-1.2.3.tar.gz",
+    "source_urls": [
+     "https://example.org/beta-1.2.3.tar.gz"
+    ],
+    "spec_path": "SPECS/beta/beta.spec",
+    "spec_url": "https://github.com/akhila-dev5/azurelinux-test/blob/3.0/SPECS/beta/beta.spec",
+    "summary": "beta summary",
+    "tarball_available": null,
+    "tarball_name": null,
+    "tarball_url": null,
+    "url": "https://example.org/beta",
+    "version": "1.2.3"
+   },
+   {
+    "branch": "3.0",
+    "epoch": 0,
+    "evr": "1.24.1-2",
+    "finding_counts": {},
+    "group_name": "Applications",
+    "id": 4,
+    "is_primary": 1,
+    "license": "MIT",
+    "name": "golang",
+    "patch_count": 1,
+    "release": "2",
+    "scan_id": 1,
+    "source0_url": "https://example.org/golang-1.24.1.tar.gz",
+    "source_urls": [
+     "https://example.org/golang-1.24.1.tar.gz"
+    ],
+    "spec_path": "SPECS/golang/golang.spec",
+    "spec_url": "https://github.com/akhila-dev5/azurelinux-test/blob/3.0/SPECS/golang/golang.spec",
+    "summary": "golang summary",
+    "tarball_available": 1,
+    "tarball_name": "golang-1.24.1.tar.gz",
+    "tarball_url": "https://blob/golang-1.24.1.tar.gz",
+    "url": "https://example.org/golang",
+    "version": "1.24.1"
+   },
+   {
+    "branch": "3.0",
+    "epoch": 0,
+    "evr": "1.22.9-2",
+    "finding_counts": {
+     "affected": 1
+    },
+    "group_name": "Applications",
+    "id": 5,
+    "is_primary": 0,
+    "license": "MIT",
+    "name": "golang-1.22",
+    "patch_count": 1,
+    "release": "2",
+    "scan_id": 1,
+    "source0_url": "https://example.org/golang-1.22-1.22.9.tar.gz",
+    "source_urls": [
+     "https://example.org/golang-1.22-1.22.9.tar.gz"
+    ],
+    "spec_path": "SPECS/golang-1.22/golang-1.22.spec",
+    "spec_url": "https://github.com/akhila-dev5/azurelinux-test/blob/3.0/SPECS/golang-1.22/golang-1.22.spec",
+    "summary": "golang-1.22 summary",
+    "tarball_available": 1,
+    "tarball_name": "golang-1.22-1.22.9.tar.gz",
+    "tarball_url": "https://blob/golang-1.22-1.22.9.tar.gz",
+    "url": "https://example.org/golang-1.22",
+    "version": "1.22.9"
+   }
+  ],
+  "limit": 50,
+  "page": 1,
+  "total": 5
+ },
+ "path": "/api/packages",
+ "status": 200
+}

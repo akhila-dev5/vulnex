@@ -9,7 +9,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
-from test_access import AUTO, FINDING, client, admin  # noqa: F401  (shared fixtures)
 
 from vulnex import config
 from vulnex.automation import patching, pr, specfile
@@ -333,34 +332,3 @@ def test_the_apply_script_reports_a_broken_existing_patch(world, tmp_path):
     src.mkdir()
     with pytest.raises(patching.PatchError, match="bad.patch"):
         patching.apply_existing(src, spec)
-
-
-# -- the API side -----------------------------------------------------------
-def test_worker_endpoints_need_the_automation_key(client, admin):  # noqa: F811
-    assert client.post("/api/automation/jobs/next").status_code == 401
-    assert client.post("/api/automation/jobs/next", headers=admin).status_code == 401
-    assert client.post("/api/automation/jobs/next", headers=AUTO).json() == {"job": None}
-
-
-def test_a_queued_request_becomes_a_job_and_its_result_is_recorded(client, admin):  # noqa: F811
-    from test_claim_workflows import _sign_in
-
-    client.post("/api/assignments", headers=admin, json={
-        "cve_id": FINDING["cve_id"], "package_name": "demo", "assignee_email": config.AUTOMATION_EMAIL})
-    client.post("/api/triage/patch", headers=admin, json={**FINDING, "final_verdict": "Patch Available", "patch_link": "https://github.com/o/r/commit/abcdef1"})
-    body = {"package_name": "demo", "branch": FINDING["branch"], "spec_path": FINDING["spec_path"],
-            "cve_ids": [FINDING["cve_id"]], "mode": "new_pr"}
-    assert client.post("/api/automation/requests", headers=admin, json=body).status_code == 200
-    # while it waits, the package cannot be queued twice
-    assert client.post("/api/automation/requests", headers=admin, json=body).status_code == 409
-    job = client.post("/api/automation/jobs/next", headers=AUTO).json()["job"]
-    assert job["package_name"] == "demo" and job["cves"][0]["cve_id"] == FINDING["cve_id"]
-    assert job["cves"][0]["patch_link"] == "https://github.com/o/r/commit/abcdef1"
-    assert client.post("/api/automation/jobs/next", headers=AUTO).json() == {"job": None}  # taken
-    done = client.post(f"/api/automation/jobs/{job['id']}/result", headers=AUTO, json={
-        "status": "done", "pr_url": "https://github.com/akhila-dev5/azurelinux-test/pull/9", "pr_number": "9",
-        "branch_name": "topic/demo/3.0/x"})
-    assert done.json()["request"]["status"] == "done" and done.json()["request"]["pr_url"].endswith("/pull/9")
-    # once the PR is set on the CVE, it leaves the Automation list
-    client.post("/api/triage/github-pr", headers=AUTO, json={**FINDING, "number": "9", "url": "https://github.com/akhila-dev5/azurelinux-test/pull/9"})
-    assert client.get("/api/automation", headers=admin).json()["packages"] == []

@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
-"""Contract check: the .NET API must answer exactly like the Python API.
+"""Seed test data and record the API's answers as golden files.
 
-Seeds one PostgreSQL database with a small but varied snapshot, then asks both servers
-the same read questions and compares the JSON. Run by CI (see .github/workflows/ci.yml)::
+The .NET integration tests (api/Vulnex.Api.Tests) start the API against a database holding
+exactly the rows created by ``seed`` and compare every read endpoint with the files in
+``api/Vulnex.Api.Tests/golden``. The golden files were first recorded from the original
+Python API, so they pin the behaviour the migration had to keep.
 
-    DATABASE_URL=postgresql://... python scripts/contract_check.py \
-        --python http://127.0.0.1:8001 --dotnet http://127.0.0.1:8002
+    DATABASE_URL=postgresql://... python scripts/api_snapshots.py seed
+    DATABASE_URL=postgresql://... python scripts/api_snapshots.py record --base http://127.0.0.1:8000
 
-Both servers must already be running against that same database. Exit status 1 when any
-response differs; the differences are printed.
+``record`` overwrites the golden files from whatever server answers at --base; only use it
+when an endpoint is *meant* to change, and review the diff.
 """
 
 from __future__ import annotations
@@ -23,8 +25,12 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 
-# Keys whose values legitimately differ between two calls or two implementations.
-VOLATILE = {"time", "expires_at", "_fetched_at"}
+# Keys whose values legitimately differ between runs (the .NET tests drop the same keys).
+VOLATILE = {
+    "time", "expires_at", "_fetched_at",
+    # stamped with the clock when the test rows are seeded, so they differ on every run
+    "created_at", "updated_at", "first_seen", "rescored_at", "started_at", "finished_at", "requested_at",
+}
 
 
 def seed() -> None:
@@ -186,37 +192,33 @@ def diff(a, b, path="$"):
         yield f"{path}: python={a!r:.120} dotnet={b!r:.120}"
 
 
+def record(base: str, out: Path) -> int:
+    out.mkdir(parents=True, exist_ok=True)
+    for old in out.glob("*.json"):
+        old.unlink()
+    for i, path in enumerate(CHECKS, start=1):
+        status, body = get(base, path)
+        (out / f"{i:03d}.json").write_text(
+            json.dumps({"path": path, "status": status, "body": clean(body)}, indent=1, sort_keys=True) + "\n"
+        )
+    print(f"recorded {len(CHECKS)} endpoints into {out}")
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--python", default="http://127.0.0.1:8001")
-    parser.add_argument("--dotnet", default="http://127.0.0.1:8002")
-    parser.add_argument("--no-seed", action="store_true")
+    parser.add_argument("command", choices=["seed", "record"])
+    parser.add_argument("--base", default="http://127.0.0.1:8000")
+    parser.add_argument("--out", default=str(Path(__file__).resolve().parents[1] / "api" / "Vulnex.Api.Tests" / "golden"))
     args = parser.parse_args()
     if not os.environ.get("DATABASE_URL"):
-        print("DATABASE_URL must point at the PostgreSQL database both servers use", file=sys.stderr)
+        print("DATABASE_URL must point at the PostgreSQL test database", file=sys.stderr)
         return 2
-    if not args.no_seed:
+    if args.command == "seed":
         seed()
-
-    failures = 0
-    for path in CHECKS:
-        py_status, py_body = get(args.python, path)
-        net_status, net_body = get(args.dotnet, path)
-        problems = []
-        if py_status != net_status:
-            problems.append(f"status python={py_status} dotnet={net_status}")
-        problems += list(diff(clean(py_body), clean(net_body)))
-        if problems:
-            failures += 1
-            print(f"FAIL {path}")
-            for line in problems[:15]:
-                print("   ", line)
-            if len(problems) > 15:
-                print(f"    ... and {len(problems) - 15} more")
-        else:
-            print(f"ok   {path}")
-    print(f"\n{len(CHECKS) - failures}/{len(CHECKS)} endpoints match")
-    return 1 if failures else 0
+        print("seeded")
+        return 0
+    return record(args.base, Path(args.out))
 
 
 if __name__ == "__main__":
