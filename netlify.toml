@@ -1,4 +1,4 @@
-# Netlify hosts the React frontend only. The FastAPI backend stays on Render, and
+# Netlify hosts the React frontend only. The .NET backend stays on Render, and
 # Netlify forwards /api/* to it so the browser sees a single origin (no CORS, and
 # the Google sign-in redirect "/#vulnex_token=..." lands back on this site).
 

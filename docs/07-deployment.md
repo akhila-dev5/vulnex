@@ -5,7 +5,7 @@ Everything runs on free tiers.
 | Service | Hosts | Config file |
 |---------|-------|-------------|
 | **Netlify** | The React app | `netlify.toml` |
-| **Render** | The FastAPI service | `render.yaml` |
+| **Render** | The .NET API service (Docker) | `render.yaml`, `Dockerfile` |
 | **Supabase** | PostgreSQL | none (connection string only) |
 | **GitHub Actions** | CI and the daily scan | `.github/workflows/ci.yml`, `scan.yml` |
 | **GitHub Pages** | Optional read-only static copy | built by `scan.yml` only if the `ENABLE_PAGES` variable is `true` |
@@ -18,12 +18,12 @@ If the Render URL changes, edit the `to = ...` line in `netlify.toml`.
 
 ## Render (backend)
 
-`render.yaml` is a Blueprint: Python service, free plan, region Oregon.
+`render.yaml` is a Blueprint: a Docker service, free plan, region Oregon.
 
-- Build: builds the frontend, then `pip install -r backend/requirements.txt`
-- Start: `cd backend && uvicorn vulnex.api:app --host 0.0.0.0 --port $PORT`
+- Build: the `Dockerfile` builds the React app, publishes the .NET API and installs the Python engine
+- Start: `docker-entrypoint.sh` applies the Alembic migrations, then runs the API on `$PORT`
 - Health check: `/api/health`
-- `PYTHON_VERSION` is pinned to `3.11.9`. If the service was created by hand instead of from the Blueprint, set this variable yourself.
+- If the service was created by hand instead of from the Blueprint, choose the Docker runtime and `./Dockerfile`.
 
 The free plan **sleeps after about 15 minutes without traffic**; the next request waits 30 to 60 seconds. A free uptime monitor calling `/api/health` every 10 minutes avoids that.
 

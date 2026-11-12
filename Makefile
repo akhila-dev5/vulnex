@@ -25,8 +25,8 @@ scan: ## Run a full scan of the Azure Linux branch(es) in BRANCHES
 	cd backend && $(PYBIN) -m vulnex.cli scan --branches "$(BRANCHES)"
 	cd backend && $(PYBIN) -m vulnex.cli stats
 
-serve: ## Serve the live dashboard + API on :$(PORT)
-	cd backend && $(PYBIN) -m vulnex.cli serve --port $(PORT)
+serve: ## Serve the live dashboard + API (.NET) on :$(PORT); needs DATABASE_URL (PostgreSQL)
+	VULNEX_PYTHON=$(CURDIR)/$(PYBIN) VULNEX_BACKEND_DIR=$(CURDIR)/backend VULNEX_FRONTEND_DIR=$(CURDIR)/frontend/dist PORT=$(PORT) dotnet run --project api/Vulnex.Api
 
 export: ## Build the static GitHub Pages dashboard into site/
 	cd backend && $(PYBIN) -m vulnex.cli export --out ../site

@@ -1,0 +1,27 @@
+{
+ "body": {
+  "can_approve_dispute": false,
+  "can_assign": false,
+  "can_claim": false,
+  "can_comment": false,
+  "can_dispute": false,
+  "can_rescore": false,
+  "can_scan": false,
+  "can_set_patch_verdict": false,
+  "can_set_pr": false,
+  "can_triage": false,
+  "identity": {
+   "email": "",
+   "identity": "anonymous",
+   "kind": "viewer"
+  },
+  "methods": {
+   "google": false,
+   "google_email": "gurujuakhila.dev@gmail.com"
+  },
+  "role": "viewer",
+  "write_enabled": false
+ },
+ "path": "/api/role",
+ "status": 200
+}

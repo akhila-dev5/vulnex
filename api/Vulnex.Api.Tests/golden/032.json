@@ -1,0 +1,7 @@
+{
+ "body": {
+  "detail": "CVE/package/branch combination not found in the current scan"
+ },
+ "path": "/api/cves/CVE-9999-0000/deep",
+ "status": 404
+}

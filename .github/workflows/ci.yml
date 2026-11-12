@@ -3,7 +3,7 @@ name: Vulnex CI
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, dev]
 
 jobs:
   backend-tests:
@@ -52,3 +52,44 @@ jobs:
       - name: Type-check and build React dashboard
         working-directory: frontend
         run: npm run build
+
+  dotnet-api:
+    # The .NET API: unit tests, then integration tests against a seeded PostgreSQL database
+    # (golden answers recorded from the original Python API, plus the write workflows).
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: vulnex_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/vulnex_test
+      VULNEX_PYTHON: python
+      VULNEX_BACKEND_DIR: ${{ github.workspace }}/backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install the Python engine
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+      - name: Create the schema and the test rows
+        run: |
+          (cd backend && VULNEX_SEED_SNAPSHOT=0 python -m vulnex.engine_bridge migrate)
+          python scripts/api_snapshots.py seed
+      - name: Build the .NET API
+        run: dotnet build api/Vulnex.sln -c Release
+      - name: Unit tests and golden answers (read endpoints)
+        run: dotnet test api/Vulnex.sln -c Release --no-build --filter "Suite!=Workflow"
+      - name: Workflow tests (writes, roles, automation)
+        run: dotnet test api/Vulnex.sln -c Release --no-build --filter "Suite=Workflow"

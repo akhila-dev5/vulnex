@@ -1,0 +1,7 @@
+{
+ "body": {
+  "detail": "Package not found"
+ },
+ "path": "/api/packages/nope",
+ "status": 404
+}

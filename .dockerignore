@@ -1,0 +1,8 @@
+.git
+**/node_modules
+frontend/dist
+api/**/bin
+api/**/obj
+**/__pycache__
+data/cache
+docs
