@@ -35,10 +35,42 @@ def _emit(payload: Any) -> None:
 def _migrate() -> int:
     from . import config, db
 
+    seeded: Any = None
     if config.DATABASE_URL:
         db.migrate_postgres()
-    _emit({"ok": True})
+        seeded = _seed_snapshot()
+    _emit({"ok": True, "seeded": seeded})
     return 0
+
+
+def _seed_snapshot() -> Any:
+    """On a brand-new Postgres, load the bundled snapshot (data/vulnex.db) once.
+
+    The old Python API did this on startup. A database that already has scans is left
+    alone, and triage tables are never overwritten. Missing first-scanned dates are
+    filled from the snapshot. Set VULNEX_SEED_SNAPSHOT=0 to skip (tests).
+    """
+    import os
+
+    from . import config, db
+    from .sqlite_import import backfill_first_seen, seed_if_empty
+
+    if os.environ.get("VULNEX_SEED_SNAPSHOT", "1") == "0":
+        return None
+    conn = db.connect()
+    try:
+        result = seed_if_empty(conn, config.DB_PATH)
+        backfill_first_seen(conn, config.DB_PATH)
+        return {"seeded": bool(result.get("seeded")), "reason": result.get("reason", "")}
+    except Exception as exc:  # a bad snapshot must never stop the service
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        sys.stderr.write(f"[vulnex] could not load the bundled snapshot: {exc}\n")
+        return {"seeded": False, "reason": str(exc)}
+    finally:
+        conn.close()
 
 
 def _enrich(cve_id: str) -> int:

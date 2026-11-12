@@ -85,7 +85,7 @@ jobs:
           pip install -r backend/requirements.txt
       - name: Create the schema and the test rows
         run: |
-          (cd backend && python -m vulnex.engine_bridge migrate)
+          (cd backend && VULNEX_SEED_SNAPSHOT=0 python -m vulnex.engine_bridge migrate)
           python scripts/api_snapshots.py seed
       - name: Build the .NET API
         run: dotnet build api/Vulnex.sln -c Release
