@@ -668,7 +668,7 @@ public static class Endpoints
             if (claimed is null) return Ok(new Row { ["job"] = null });
             var key = (claimed.Str("package_name"), claimed.Str("branch"), claimed.Str("spec_path"));
             var group = AutomationPackages(conn).FirstOrDefault(g => (g.Str("package_name"), g.Str("branch"), g.Str("spec_path")) == key);
-            var wanted = ((List<string>)claimed["cve_ids"]!).ToHashSet();
+            var wanted = ((List<object?>)claimed["cve_ids"]!).Select(x => Convert.ToString(x) ?? "").ToHashSet();
             var items = group is null ? new List<Row>() : ((List<Row>)group["items"]!).Where(i => wanted.Contains(i.Str("cve_id"))).ToList();
             if (items.Count == 0)
             {
