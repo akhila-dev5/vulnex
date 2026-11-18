@@ -130,8 +130,11 @@ jobs:
         run: |
           docker rm -f vulnex >/dev/null
           set +e
-          docker run --rm --network host \
+          # Wrong password: the database answers with an error, so the entrypoint must exit 1.
+          timeout 120 docker run --rm --network host \
             -e PORT=8081 -e VULNEX_SEED_SNAPSHOT=0 \
             -e DATABASE_URL=postgresql://postgres:wrong@localhost:5432/vulnex_test \
             vulnex-api:ci
-          echo "exit code: $?"
+          code=$?
+          echo "exit code: $code"
+          [ "$code" -eq 1 ]

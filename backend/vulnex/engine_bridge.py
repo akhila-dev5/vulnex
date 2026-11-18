@@ -35,21 +35,24 @@ def _emit(payload: Any) -> None:
 EXIT_DB_UNREACHABLE = 2  # the database could not be reached at all (maybe only for now)
 
 
-def _is_unreachable(exc: BaseException) -> bool:
-    """True when the chain holds a connection failure rather than a server-side error.
+# Messages that mean "could not get a network connection", as libpq/psycopg word them.
+# psycopg gives connection-phase errors no SQLSTATE, so a wrong password looks the same
+# as a refused connection except for its text. Only the network failures below count as
+# "unreachable"; everything else (bad password, unknown database, failed migration) is a
+# real error that must stop the deploy.
+_NETWORK_FAILURES = (
+    "connection refused", "failed to resolve host", "could not translate host name",
+    "name or service not known", "temporary failure in name resolution",
+    "network is unreachable", "no route to host", "timeout expired", "timed out",
+    "connection reset", "server closed the connection", "the database system is starting up",
+    "the database system is shutting down",
+)
 
-    A server that answers with an error (bad privileges, a broken migration) always sets
-    an SQLSTATE; a refused, timed-out or unresolvable connection does not.
-    """
-    seen: set[int] = set()
-    while exc is not None and id(exc) not in seen:
-        seen.add(id(exc))
-        name = type(exc).__name__
-        if name == "OperationalError" and getattr(exc, "sqlstate", None) is None \
-                and getattr(getattr(exc, "orig", None), "sqlstate", None) is None:
-            return True
-        exc = exc.__cause__ or exc.__context__ or getattr(exc, "orig", None)
-    return False
+
+def _is_unreachable(exc: BaseException) -> bool:
+    """True when the failure is the network or a database that is still starting."""
+    text = str(exc).lower()
+    return any(marker in text for marker in _NETWORK_FAILURES)
 
 
 def _migrate() -> int:
