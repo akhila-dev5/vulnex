@@ -92,7 +92,12 @@ jobs:
       - name: Unit tests and golden answers (read endpoints)
         run: dotnet test api/Vulnex.sln -c Release --no-build --filter "Suite!=Workflow"
       - name: Workflow tests (writes, roles, automation)
+        # Before each test empties the tables, the Python checker reads what the previous test wrote.
+        env:
+          VULNEX_CHECK_SHARED_DATA: "1"
         run: dotnet test api/Vulnex.sln -c Release --no-build --filter "Suite=Workflow"
+      - name: Python can read everything the .NET API wrote (final state)
+        run: python scripts/check_shared_data.py
 
   docker-image:
     # Builds the image Render deploys and starts it, so a missing file, dependency or

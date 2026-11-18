@@ -73,3 +73,32 @@ this build ships (`engine_bridge schema-head`). Otherwise it returns 503 with `n
 
 TLS: `DATABASE_URL` `sslmode` has the libpq meaning. `require` and `prefer` encrypt without verifying the
 certificate (Supabase's pooler uses its own CA); `verify-ca` and `verify-full` verify it.
+
+## One database for dev and main
+
+`dev` and `main` use the same Supabase database, so merging `dev` into `main` moves no data and needs no
+migration. What keeps that safe:
+
+* **No schema change.** This migration adds no Alembic revision (0001 to 0006 are untouched). The Python
+  build on `main` and the .NET build on `dev` expect the same tables, and the .NET start-up migration is a
+  no-op at the same head.
+* **Same row formats on both sides.** Both write timestamps as `YYYY-MM-DDTHH:MM:SS+00:00`, lists as JSON
+  text, and the same status words. `scripts/check_shared_data.py` checks this on any database. It is
+  read-only (it runs `SELECT`s in a read-only transaction). CI runs it before every workflow test empties the
+  tables, so each row the .NET API writes is shown to be readable by Python.
+* **Start-up never overwrites.** The snapshot is loaded only into a database with no scans, and missing
+  first-scanned dates are filled only where they are empty.
+* **Tests cannot empty a real database.** The workflow tests and `scripts/api_snapshots.py seed` run
+  `TRUNCATE`. Both refuse unless the database is on localhost and its name contains `test` or `golden`.
+* **Caches and sessions are per service.** Each service keeps its own 60-second response cache and
+  sign-in sessions, so a change made on one can take up to a minute to show on the other. Nothing is
+  corrupted by this.
+
+Before the first time the .NET service touches the real database:
+
+```bash
+# 1. A backup you can restore (use the Session pooler URL from Supabase -> Connect)
+pg_dump "$DATABASE_URL" --no-owner -Fc -f vulnex-before-dotnet.dump
+# 2. After testing on dev: confirm the data is valid for both backends (read-only)
+DATABASE_URL="$DATABASE_URL" python scripts/check_shared_data.py
+```

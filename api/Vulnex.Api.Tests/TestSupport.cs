@@ -1,3 +1,4 @@
+using System.Data.Common;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text;
@@ -54,11 +55,55 @@ public sealed class ApiFactory : WebApplicationFactory<Program>
     public void ResetTriage()
     {
         using var conn = Services.GetRequiredService<IDbFactory>().Open();
+        RefuseUnlessThrowawayDatabase(conn);
+        CheckWhatPythonReads();
         Sql.Exec(conn,
             "TRUNCATE finding_triage, finding_comments, disputes, assignments, assignment_comments, " +
             "cve_rescores, automation_requests RESTART IDENTITY");
         Services.GetRequiredService<ResponseCache>().Clear();
         Services.GetRequiredService<SessionStore>().Clear();
+    }
+
+    /// <summary>
+    /// These tests empty tables. Never let them run against a real database: the name must say
+    /// it is a test database and the server must be this machine (or the CI service container).
+    /// </summary>
+    static void RefuseUnlessThrowawayDatabase(DbConnection conn)
+    {
+        var name = Sql.One(conn, "SELECT current_database() AS n")?.Str("n") ?? "";
+        string host;
+        try { host = new Uri(Cfg.DatabaseUrl.Replace("postgres://", "postgresql://")).Host; } catch { host = ""; }
+        var local = host is "localhost" or "127.0.0.1" or "::1";
+        var throwaway = System.Text.RegularExpressions.Regex.IsMatch(name, "test|golden", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        if (!local || !throwaway)
+            throw new InvalidOperationException(
+                $"Refusing to run: these tests TRUNCATE tables, and '{name}' on '{host}' does not look like a throwaway " +
+                "database (it must be on localhost and its name must contain 'test' or 'golden'). " +
+                "Point DATABASE_URL at a scratch database.");
+    }
+
+    /// <summary>
+    /// With VULNEX_CHECK_SHARED_DATA=1 (set in CI), run scripts/check_shared_data.py on the rows the previous
+    /// test left behind, so everything the .NET API wrote is shown to be readable by the Python code.
+    /// </summary>
+    static void CheckWhatPythonReads()
+    {
+        if (Environment.GetEnvironmentVariable("VULNEX_CHECK_SHARED_DATA") != "1") return;
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "scripts", "check_shared_data.py"))) dir = dir.Parent;
+        if (dir is null) throw new FileNotFoundException("scripts/check_shared_data.py not found above the test output folder.");
+        var psi = new System.Diagnostics.ProcessStartInfo(Environment.GetEnvironmentVariable("VULNEX_PYTHON") ?? "python3")
+        {
+            WorkingDirectory = dir.FullName, RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false,
+        };
+        psi.ArgumentList.Add(Path.Combine("scripts", "check_shared_data.py"));
+        using var proc = System.Diagnostics.Process.Start(psi)!;
+        var stdout = proc.StandardOutput.ReadToEndAsync();
+        var stderr = proc.StandardError.ReadToEndAsync();
+        proc.WaitForExit();
+        if (proc.ExitCode != 0)
+            throw new Xunit.Sdk.XunitException(
+                "The previous test left data the Python backend cannot read:\n" + stdout.Result + stderr.Result);
     }
 }
 

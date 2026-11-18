@@ -33,10 +33,27 @@ VOLATILE = {
 }
 
 
+def _refuse_unless_throwaway(conn) -> None:
+    """seed() empties every table. Only run it on a local database with 'test' or 'golden' in its name."""
+    import re
+    from urllib.parse import urlparse
+
+    from vulnex import config
+
+    name = conn.execute("SELECT current_database() AS n").fetchone()["n"]
+    host = urlparse(config.DATABASE_URL.replace("postgres://", "postgresql://", 1)).hostname or ""
+    if host not in ("localhost", "127.0.0.1", "::1") or not re.search("test|golden", name, re.I):
+        raise SystemExit(
+            f"Refusing to seed: this EMPTIES every table, and '{name}' on '{host}' is not a throwaway "
+            "database (it must be on localhost with 'test' or 'golden' in its name)."
+        )
+
+
 def seed() -> None:
     from vulnex import db
 
     conn = db.connect()
+    _refuse_unless_throwaway(conn)
     db.init_db(conn)
     conn.execute(
         "TRUNCATE scans, packages, patches, findings, assignments, assignment_comments, finding_triage, "
