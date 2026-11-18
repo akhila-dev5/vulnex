@@ -1,0 +1,35 @@
+{
+ "body": {
+  "items": [
+   {
+    "assignee_email": "vulnexsecurityautomation@gmail.com",
+    "comments": [
+     {
+      "assignment_id": 1,
+      "author": "gurujuakhila.dev@gmail.com",
+      "body": "on it",
+      "id": 1
+     }
+    ],
+    "cve_id": "CVE-2024-0001",
+    "id": 1,
+    "notes": "please fix",
+    "package_name": "alpha",
+    "status": "queued",
+    "target_repo": "akhila-dev5/azurelinux-test"
+   },
+   {
+    "assignee_email": "dev2.vulnex@gmail.com",
+    "comments": [],
+    "cve_id": "CVE-2024-0002",
+    "id": 2,
+    "notes": "",
+    "package_name": "beta",
+    "status": "queued",
+    "target_repo": "akhila-dev5/azurelinux-test"
+   }
+  ]
+ },
+ "path": "/api/assignments",
+ "status": 200
+}

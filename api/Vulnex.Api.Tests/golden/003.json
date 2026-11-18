@@ -1,0 +1,74 @@
+{
+ "body": {
+  "affected": 3,
+  "assignments": 2,
+  "distinct_cves": 3,
+  "excluded_findings": 3,
+  "false_positive": 1,
+  "last_scan": {
+   "affected_count": 4,
+   "branches": "3.0,4.0",
+   "duration_seconds": 1.5,
+   "ecosystem": "Azure Linux:3+Azure Linux:4",
+   "false_positive_count": 0,
+   "finding_count": 7,
+   "id": 1,
+   "message": "seed",
+   "package_count": 5,
+   "patched_count": 1,
+   "status": "success",
+   "unconfirmed_count": 0
+  },
+  "nopatch_markers": 1,
+  "patched": 1,
+  "repository": {
+   "branches": [
+    "3.0",
+    "4.0"
+   ],
+   "ecosystem": "Azure Linux:3",
+   "owner": "akhila-dev5",
+   "patch_target_repo": "akhila-dev5/azurelinux-test",
+   "repo": "azurelinux-test",
+   "vulnerability_data": "https://raw.githubusercontent.com/akhila-dev5/VulnerabilityData/main/data/azurelinux-test.json",
+   "vulnerability_data_oval": "https://raw.githubusercontent.com/akhila-dev5/VulnerabilityData/main/oval/azurelinux-test.xml"
+  },
+  "roles": {
+   "admin": {
+    "capabilities": [
+     "triage",
+     "dispute",
+     "comment",
+     "scan",
+     "assign",
+     "patch_verdict",
+     "set_pr"
+    ],
+    "email": "gurujuakhila.dev@gmail.com",
+    "identity": "gurujuakhila.dev@gmail.com"
+   },
+   "automation": {
+    "capabilities": [
+     "set_pr"
+    ],
+    "email": "vulnexsecurityautomation@gmail.com",
+    "identity": "vulnex-sec"
+   }
+  },
+  "selected_branch": "3.0",
+  "severity": {
+   "critical": 1,
+   "high": 2,
+   "low": 0,
+   "medium": 0,
+   "none": 0,
+   "unknown": 0
+  },
+  "total_findings": 3,
+  "total_packages": 4,
+  "total_patches": 2,
+  "unconfirmed": 1
+ },
+ "path": "/api/stats?branch=3.0",
+ "status": 200
+}

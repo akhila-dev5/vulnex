@@ -1,0 +1,81 @@
+{
+ "body": {
+  "items": [
+   {
+    "advisory_id": "ADV-CVE-2024-0003",
+    "affected_files": [
+     "src/a.c",
+     "src/b.c"
+    ],
+    "assignment": null,
+    "azl_fixed_basis": "changelog",
+    "azl_fixed_version": "1.2.3-2",
+    "branch": "3.0",
+    "confidence": 0.9,
+    "corroborating_sources": [
+     "debian"
+    ],
+    "cve_id": "CVE-2024-0003",
+    "cvss_score": 7.5,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N",
+    "description": "CVE-2024-0003 in alpha",
+    "dispute": null,
+    "evidence": [
+     {
+      "detail": "1.2.3 < 1.2.4",
+      "kind": "version"
+     }
+    ],
+    "fix_source": "patch",
+    "fixed_in": "1.2.3-2",
+    "fixed_in_basis": "changelog",
+    "fixed_version": "1.2.4",
+    "id": 4,
+    "package_name": "alpha",
+    "package_version": "1.2.3-2",
+    "patch_availability": {
+     "ai_verdict": "Not applicable",
+     "analysis": [
+      "Finding is 'patched', not an open exposure \u2014 patch availability does not apply.",
+      "Upstream fix commit: https://github.com/o/alpha/commit/abc3",
+      "Upstream fixed version 1.2.4 is not yet shipped on 3.0."
+     ],
+     "applicable": false,
+     "available": true,
+     "available_since": "",
+     "final_verdict": "Not applicable",
+     "overridden": false,
+     "patch_link": "https://github.com/o/alpha/commit/abc3",
+     "possible_links": [
+      "https://github.com/o/alpha/commit/abc3"
+     ],
+     "source": "upstream-fix"
+    },
+    "patch_name": "CVE-2024-0003.patch",
+    "patch_status": "applied",
+    "references": [
+     {
+      "source": "osv",
+      "url": "https://github.com/o/alpha/commit/abc3"
+     },
+     {
+      "source": "nvd",
+      "url": "https://example.org/advisory"
+     }
+    ],
+    "scan_id": 1,
+    "severity": "medium",
+    "source": "osv",
+    "spec_path": "SPECS/alpha/alpha.spec",
+    "status": "patched",
+    "triage": null,
+    "upstream_fix": "https://github.com/o/alpha/commit/abc3"
+   }
+  ],
+  "limit": 100,
+  "page": 1,
+  "total": 1
+ },
+ "path": "/api/findings?fixed_version=1.2.3",
+ "status": 200
+}

@@ -1,0 +1,161 @@
+{
+ "body": {
+  "branch": "3.0",
+  "epoch": 0,
+  "evr": "1.22.9-2",
+  "findings": [
+   {
+    "advisory_id": "ADV-CVE-2024-0006",
+    "affected_files": [
+     "src/a.c",
+     "src/b.c"
+    ],
+    "assignment": null,
+    "azl_fixed_basis": null,
+    "azl_fixed_version": null,
+    "branch": "3.0",
+    "confidence": 0.9,
+    "corroborating_sources": [
+     "debian"
+    ],
+    "cve_id": "CVE-2024-0006",
+    "cvss_score": null,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N",
+    "deep": {
+     "affected_files": [
+      "src/a.c",
+      "src/b.c"
+     ],
+     "backport_patches": [],
+     "branch": "3.0",
+     "cve_id": "CVE-2024-0006",
+     "notes": [
+      "Files listed are the paths touched by the upstream fix commit for this CVE.",
+      "Source tarball for this package: golang-1.22-1.22.9.tar.gz."
+     ],
+     "package_name": "golang-1.22",
+     "package_version": "1.2.3-2",
+     "spec_path": "SPECS/golang-1.22/golang-1.22.spec",
+     "spec_url": "https://github.com/akhila-dev5/azurelinux-test/blob/3.0/SPECS/golang-1.22/golang-1.22.spec",
+     "tarball": {
+      "available": 1,
+      "name": "golang-1.22-1.22.9.tar.gz",
+      "url": "https://blob/golang-1.22-1.22.9.tar.gz"
+     },
+     "upstream_fixed_version": "1.2.4"
+    },
+    "description": "CVE-2024-0006 in golang-1.22",
+    "dispute": null,
+    "evidence": [
+     {
+      "detail": "1.2.3 < 1.2.4",
+      "kind": "version"
+     }
+    ],
+    "fix_source": null,
+    "fixed_in": null,
+    "fixed_in_basis": null,
+    "fixed_version": "1.2.4",
+    "id": 7,
+    "links": [
+     {
+      "label": "Ubuntu",
+      "url": "https://ubuntu.com/security/CVE-2024-0006"
+     },
+     {
+      "label": "Debian",
+      "url": "https://security-tracker.debian.org/tracker/CVE-2024-0006"
+     },
+     {
+      "label": "Red Hat",
+      "url": "https://access.redhat.com/security/cve/CVE-2024-0006"
+     },
+     {
+      "label": "Mitre",
+      "url": "https://www.cve.org/CVERecord?id=CVE-2024-0006"
+     },
+     {
+      "label": "OSV",
+      "url": "https://osv.dev/vulnerability/CVE-2024-0006"
+     },
+     {
+      "label": "NVD",
+      "url": "https://nvd.nist.gov/vuln/detail/CVE-2024-0006"
+     }
+    ],
+    "package_name": "golang-1.22",
+    "package_version": "1.2.3-2",
+    "patch_availability": {
+     "ai_verdict": "Patch Available",
+     "analysis": [
+      "Upstream fix commit: https://github.com/o/golang-1.22/commit/abc6",
+      "Upstream fixed version 1.2.4 is not yet shipped on 3.0."
+     ],
+     "applicable": true,
+     "available": true,
+     "available_since": "",
+     "final_verdict": "Patch Available",
+     "overridden": false,
+     "patch_link": "https://github.com/o/golang-1.22/commit/abc6",
+     "possible_links": [
+      "https://github.com/o/golang-1.22/commit/abc6"
+     ],
+     "source": "upstream-fix"
+    },
+    "patch_name": null,
+    "patch_status": null,
+    "raw_sources": [],
+    "references": [
+     {
+      "source": "osv",
+      "url": "https://github.com/o/golang-1.22/commit/abc6"
+     },
+     {
+      "source": "nvd",
+      "url": "https://example.org/advisory"
+     }
+    ],
+    "scan_id": 1,
+    "severity": "low",
+    "source": "osv",
+    "spec_path": "SPECS/golang-1.22/golang-1.22.spec",
+    "status": "affected",
+    "triage": null,
+    "upstream_fix": "https://github.com/o/golang-1.22/commit/abc6"
+   }
+  ],
+  "group_name": "Applications",
+  "id": 5,
+  "is_primary": 0,
+  "license": "MIT",
+  "name": "golang-1.22",
+  "patch_count": 1,
+  "patches": [],
+  "release": "2",
+  "scan_id": 1,
+  "source0_url": "https://example.org/golang-1.22-1.22.9.tar.gz",
+  "source_urls": [
+   "https://example.org/golang-1.22-1.22.9.tar.gz"
+  ],
+  "spec_path": "SPECS/golang-1.22/golang-1.22.spec",
+  "spec_url": "https://github.com/akhila-dev5/azurelinux-test/blob/3.0/SPECS/golang-1.22/golang-1.22.spec",
+  "summary": "golang-1.22 summary",
+  "tarball_available": 1,
+  "tarball_name": "golang-1.22-1.22.9.tar.gz",
+  "tarball_url": "https://blob/golang-1.22-1.22.9.tar.gz",
+  "url": "https://example.org/golang-1.22",
+  "variants": [
+   {
+    "branch": "3.0",
+    "evr": "1.22.9-2",
+    "is_primary": 0,
+    "release": "2",
+    "spec_path": "SPECS/golang-1.22/golang-1.22.spec",
+    "version": "1.22.9"
+   }
+  ],
+  "version": "1.22.9"
+ },
+ "path": "/api/packages/golang?spec=SPECS/golang-1.22/golang-1.22.spec",
+ "status": 200
+}

@@ -195,23 +195,7 @@ def test_import_rejects_bad_arguments(tmp_path):
         import_sqlite(tmp_path / "x.db", object(), only="everything")
 
 
-def test_dispute_without_a_cve_id_is_rejected(tmp_path, monkeypatch):
-    from fastapi.testclient import TestClient
-
-    from vulnex import auth
-    from vulnex.api import app
-
-    monkeypatch.setattr(config, "DB_PATH", tmp_path / "d.db")
-    token, _ = auth.sessions.create({"email": config.ADMIN_EMAIL}, "google")
-    resp = TestClient(app).post(
-        "/api/triage/dispute",
-        headers={"X-VULNEX-Key": token},
-        json={"cve_id": "", "reason": "UPSTREAM: x", "branch": "3.0", "spec_path": "SPECS/a/a.spec"},
-    )
-    assert resp.status_code == 400
-
-
-# -- unreachable database must not crash the app -----------------------------------
+# -- unreachable database --------------------------------------------------------
 SECRET = "s3cret-pw"
 DEAD_URL = f"postgresql://postgres:{SECRET}@127.0.0.1:1/postgres"  # nothing listens on port 1
 
@@ -242,31 +226,6 @@ def test_connect_raises_a_clean_error_without_the_password(dead_db):
     assert SECRET not in str(err.value)
 
 
-def test_app_still_starts_and_health_reports_503(dead_db):
-    from fastapi.testclient import TestClient
-
-    from vulnex.api import app
-
-    with TestClient(app) as client:  # runs the startup hook; must not raise
-        health = client.get("/api/health")
-        assert health.status_code == 503
-        assert health.json()["status"] == "unavailable"
-        assert SECRET not in health.text
-        stats = client.get("/api/stats")
-        assert stats.status_code == 503 and "Database unavailable" in stats.json()["detail"]
-
-
-def test_health_is_ok_on_sqlite(tmp_path, monkeypatch):
-    from fastapi.testclient import TestClient
-
-    from vulnex.api import app
-
-    monkeypatch.setattr(config, "DATABASE_URL", "")
-    monkeypatch.setattr(config, "DB_PATH", tmp_path / "h.db")
-    with TestClient(app) as client:
-        assert client.get("/api/health").json()["status"] == "ok"
-
-
 # -- first start on an empty Postgres ----------------------------------------------
 @needs_pg
 def test_empty_database_is_seeded_once_from_the_snapshot(tmp_path, pg):
@@ -289,24 +248,6 @@ def test_seed_without_a_snapshot_file_is_a_no_op(tmp_path, pg):
 
     out = seed_if_empty(pg, tmp_path / "missing.db")
     assert out["seeded"] is False and "no snapshot" in out["reason"]
-
-
-@needs_pg
-def test_app_shows_cves_on_first_start_without_a_manual_import(tmp_path, monkeypatch):
-    from fastapi.testclient import TestClient
-
-    from vulnex import api
-
-    src = tmp_path / "bundled.db"
-    _sqlite_with_data(src)
-    monkeypatch.setenv("VULNEX_SEED_SNAPSHOT", "1")
-    monkeypatch.setattr(config, "DB_PATH", src)
-    monkeypatch.setattr(api, "_seeded", False)
-    with TestClient(api.app) as client:  # startup hook runs here
-        assert client.get("/api/health").json()["status"] == "ok"
-        items = client.get("/api/findings", params={"branch": "3.0"}).json()["items"]
-        assert [f["cve_id"] for f in items] == ["CVE-2024-9"]
-        assert client.get("/api/stats", params={"branch": "3.0"}).json()["total_findings"] == 1
 
 
 @needs_pg

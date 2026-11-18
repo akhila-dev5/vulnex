@@ -1,0 +1,7 @@
+{
+ "body": {
+  "detail": "status must be pending, approved or rejected"
+ },
+ "path": "/api/disputes?status=bogus",
+ "status": 400
+}
