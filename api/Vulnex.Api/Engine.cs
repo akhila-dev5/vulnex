@@ -37,6 +37,27 @@ public sealed class Engine
         return Path.Combine(Directory.GetCurrentDirectory(), "backend");
     }
 
+    Task<string?>? _schemaHead;
+
+    /// <summary>The Alembic revision this build ships. Looked up once; a failed lookup is retried.</summary>
+    public async Task<string?> SchemaHeadAsync()
+    {
+        var task = _schemaHead ??= LoadSchemaHead();
+        var head = await task;
+        if (head is null) _schemaHead = null;
+        return head;
+    }
+
+    async Task<string?> LoadSchemaHead()
+    {
+        try
+        {
+            var head = (await RunJsonAsync("schema-head") as Row)?.Str("head");
+            return string.IsNullOrEmpty(head) ? null : head;
+        }
+        catch (Exception) { return null; }
+    }
+
     ProcessStartInfo Start(IEnumerable<string> args)
     {
         var psi = new ProcessStartInfo(_python)
@@ -56,9 +77,14 @@ public sealed class Engine
     public async Task<object?> RunJsonAsync(params string[] args)
     {
         using var proc = Process.Start(Start(args)) ?? throw new InvalidOperationException("Could not start the Python engine.");
-        var stdout = await proc.StandardOutput.ReadToEndAsync();
-        var stderr = await proc.StandardError.ReadToEndAsync();
+        // Read both pipes at the same time: if the child fills the stderr pipe while we are
+        // still waiting for stdout to end, it blocks and we would wait forever.
+        var stdoutTask = proc.StandardOutput.ReadToEndAsync();
+        var stderrTask = proc.StandardError.ReadToEndAsync();
+        await Task.WhenAll(stdoutTask, stderrTask);
         await proc.WaitForExitAsync();
+        var stdout = stdoutTask.Result;
+        var stderr = stderrTask.Result;
 
         var lastLine = stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries).LastOrDefault() ?? "null";
         object? parsed;

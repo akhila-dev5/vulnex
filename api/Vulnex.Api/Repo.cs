@@ -453,7 +453,7 @@ public static class Repo
         return Sql.One(c, "SELECT * FROM finding_comments WHERE id = @i", ("i", (int)id));
     }
 
-    public static List<Row> FindingComments(DbConnection c, string cveId, string branch, string specPath) =>
+    public static List<Row> FindingComments(DbConnection c, string cveId, string? branch, string? specPath) =>
         Sql.Query(c, "SELECT * FROM finding_comments WHERE cve_id = @c AND branch = @b AND spec_path = @s ORDER BY id",
             ("c", cveId), ("b", branch ?? ""), ("s", specPath ?? ""));
 

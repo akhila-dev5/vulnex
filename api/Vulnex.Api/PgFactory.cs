@@ -43,22 +43,22 @@ public sealed class PgFactory : IDbFactory
             MaxAutoPrepare = 0,
             NoResetOnClose = true,
         };
-        switch (sslmode)
+        // Same meaning as libpq / psycopg, which the Python backend used. In Npgsql 8 only
+        // verify-ca and verify-full check the server certificate; require and prefer
+        // encrypt without verifying. That is deliberate for Supabase: its pooler presents a
+        // certificate from Supabase's own CA, which is not in the system trust store, so
+        // verify-full would fail unless that CA is installed. To verify, put
+        // ?sslmode=verify-full in DATABASE_URL and trust the Supabase CA on the host.
+        b.SslMode = sslmode switch
         {
-            case "disable":
-                b.SslMode = SslMode.Disable;
-                break;
-            case "verify-full":
-                b.SslMode = SslMode.VerifyFull;
-                break;
-            case "verify-ca":
-                b.SslMode = SslMode.VerifyCA;
-                break;
-            default: // require / prefer / allow behave like libpq: encrypt, don't verify
-                b.SslMode = sslmode == "require" ? SslMode.Require : SslMode.Prefer;
-                b.TrustServerCertificate = true;
-                break;
-        }
+            "disable" => SslMode.Disable,
+            "allow" => SslMode.Allow,
+            "prefer" => SslMode.Prefer,
+            "require" => SslMode.Require,
+            "verify-ca" => SslMode.VerifyCA,
+            "verify-full" => SslMode.VerifyFull,
+            _ => throw new ArgumentException($"Unsupported sslmode '{sslmode}' in DATABASE_URL."),
+        };
         return b.ConnectionString;
     }
 

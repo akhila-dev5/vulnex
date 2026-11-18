@@ -172,22 +172,31 @@ public static class Endpoints
     public static void Map(WebApplication app)
     {
         // ---- health, role, auth ----
-        app.MapGet("/api/health", async (IDbFactory db) =>
+        app.MapGet("/api/health", async (IDbFactory db, Engine engine) =>
         {
             var body = new Row { ["status"] = "ok", ["version"] = Cfg.Version, ["time"] = Sql.UtcNow() };
             if (Cfg.DatabaseUrl.Length == 0)
                 return Status(503, Merge(body, new Row { ["status"] = "unavailable", ["database"] = "unreachable", ["detail"] = "DATABASE_URL is not set." }));
+            string? applied;
             try
             {
                 using var conn = db.Open();
                 Sql.Count(conn, "SELECT 1");
+                try { applied = Sql.One(conn, "SELECT version_num FROM alembic_version LIMIT 1")?.Str("version_num"); }
+                catch (DbException) { applied = null; } // table missing: migrations never ran
             }
             catch (DatabaseUnavailable ex)
             {
                 return Status(503, Merge(body, new Row { ["status"] = "unavailable", ["database"] = "unreachable", ["detail"] = ex.Message }));
             }
-            await Task.CompletedTask;
+            // Ready means the schema is applied and is the one this build expects.
+            var expected = await engine.SchemaHeadAsync();
+            if (string.IsNullOrEmpty(applied))
+                return Status(503, Merge(body, new Row { ["status"] = "unavailable", ["database"] = "no_schema", ["detail"] = "The database has no Alembic version: migrations have not been applied." }));
+            if (expected is not null && applied != expected)
+                return Status(503, Merge(body, new Row { ["status"] = "unavailable", ["database"] = "schema_mismatch", ["schema"] = applied, ["expected_schema"] = expected, ["detail"] = $"Database schema is at {applied}, this build expects {expected}." }));
             body["database"] = "postgres";
+            body["schema"] = applied;
             return Ok(body);
         });
 

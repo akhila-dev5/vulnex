@@ -61,11 +61,11 @@ public class AutomationTests
     [Fact]
     public async Task Only_the_automation_accounts_patch_available_cves_are_listed()
     {
-        Assert.Equal(0, (await _c.Get("/api/automation", _dev)).At("packages")!.AsArray().Count);
+        Assert.Empty((await _c.Get("/api/automation", _dev)).At("packages")!.AsArray());
 
         await AssignToAutomation("No Patch Found"); // assigned, but the verdict says no patch
         var none = await _c.Get("/api/automation", _dev);
-        Assert.Equal(0, none.At("packages")!.AsArray().Count);
+        Assert.Empty(none.At("packages")!.AsArray());
 
         await AssignToAutomation();
         var body = await _c.Get("/api/automation", _dev);
@@ -80,7 +80,7 @@ public class AutomationTests
     {
         await _c.Post("/api/assignments", new { cve_id = FindingCve, package_name = "beta", assignee_email = "dev1.vulnex@gmail.com" }, _admin);
         await Triage("/api/triage/patch", new { final_verdict = "Patch Available" }, _admin);
-        Assert.Equal(0, (await _c.Get("/api/automation", _dev)).At("packages")!.AsArray().Count);
+        Assert.Empty((await _c.Get("/api/automation", _dev)).At("packages")!.AsArray());
     }
 
     [Fact]
@@ -156,6 +156,6 @@ public class AutomationTests
 
         // once the PR is set on the CVE, it leaves the Automation list
         await Triage("/api/triage/github-pr", new { number = "9", url = "https://github.com/akhila-dev5/azurelinux-test/pull/9" }, Who.AutomationKey);
-        Assert.Equal(0, (await _c.Get("/api/automation", _admin)).At("packages")!.AsArray().Count);
+        Assert.Empty((await _c.Get("/api/automation", _admin)).At("packages")!.AsArray());
     }
 }

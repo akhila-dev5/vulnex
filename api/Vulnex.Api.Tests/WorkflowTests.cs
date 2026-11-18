@@ -226,7 +226,7 @@ public class WorkflowTests
         Assert.Equal("pending", row.At("items.0.dispute.status").Text());
         Assert.Empty(row.At("items.0.triage")?.AsObject() ?? new System.Text.Json.Nodes.JsonObject());
         var comments = await _c.Get($"/api/triage/comments?cve_id={FindingCve}&branch=3.0&spec_path=SPECS/beta/beta.spec");
-        Assert.Equal(0, comments.At("items")!.AsArray().Count);
+        Assert.Empty(comments.At("items")!.AsArray());
     }
 
     [Fact]
@@ -243,7 +243,7 @@ public class WorkflowTests
         Assert.Equal("approved", row.At("items.0.dispute.status").Text());
 
         var comments = await _c.Get($"/api/triage/comments?cve_id={FindingCve}&branch=3.0&spec_path=SPECS/beta/beta.spec");
-        Assert.Equal(1, comments.At("items")!.AsArray().Count);
+        Assert.Single(comments.At("items")!.AsArray());
         Assert.Equal("dispute", comments.At("items.0.kind").Text());
         Assert.Equal(Who.Dev, comments.At("items.0.author").Text());
         Assert.Contains("not affected", comments.At("items.0.body").Text());

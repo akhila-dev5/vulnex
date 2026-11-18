@@ -56,3 +56,20 @@ CI does this (see the `dotnet-api` job in `.github/workflows/ci.yml`).
 2. Add the new service's `/api/auth/google/callback` URL to the Google OAuth client.
 3. Point a Netlify branch deploy (or a local `VITE_API` proxy) at the new service.
 4. If everything works, merge `dev` into `main`; the existing Render service rebuilds from the Dockerfile.
+
+## Start-up and health
+
+`docker-entrypoint.sh` runs `engine_bridge migrate` before the API starts:
+
+| Exit | Meaning | What the container does |
+|------|---------|-------------------------|
+| 0 | Schema is at the latest revision | Starts the API |
+| 2 | Database unreachable (refused, timeout, DNS) | Retries 5 times, 5 s apart, then starts anyway |
+| 1 | The database answered but the migration failed | Exits, so Render keeps the old version running |
+
+`/api/health` returns 200 only when the database answers **and** `alembic_version` equals the revision
+this build ships (`engine_bridge schema-head`). Otherwise it returns 503 with `no_schema` or
+`schema_mismatch`.
+
+TLS: `DATABASE_URL` `sslmode` has the libpq meaning. `require` and `prefer` encrypt without verifying the
+certificate (Supabase's pooler uses its own CA); `verify-ca` and `verify-full` verify it.

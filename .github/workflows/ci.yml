@@ -19,8 +19,8 @@ jobs:
           --health-cmd "pg_isready -U postgres"
           --health-interval 5s --health-timeout 5s --health-retries 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
       - name: Install backend dependencies
@@ -39,8 +39,8 @@ jobs:
   frontend-build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: "22"
       - name: Install frontend dependencies
@@ -72,11 +72,11 @@ jobs:
       VULNEX_PYTHON: python
       VULNEX_BACKEND_DIR: ${{ github.workspace }}/backend
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: "10.0.x"
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
       - name: Install the Python engine
@@ -93,3 +93,45 @@ jobs:
         run: dotnet test api/Vulnex.sln -c Release --no-build --filter "Suite!=Workflow"
       - name: Workflow tests (writes, roles, automation)
         run: dotnet test api/Vulnex.sln -c Release --no-build --filter "Suite=Workflow"
+
+  docker-image:
+    # Builds the image Render deploys and starts it, so a missing file, dependency or
+    # executable bit shows up here and not on the deploy.
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: vulnex_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v5
+      - name: Build the image
+        run: docker build -t vulnex-api:ci .
+      - name: Start it against an empty database and check /api/health
+        run: |
+          docker run -d --name vulnex --network host \
+            -e PORT=8080 -e VULNEX_SEED_SNAPSHOT=0 \
+            -e DATABASE_URL=postgresql://postgres:postgres@localhost:5432/vulnex_test \
+            vulnex-api:ci
+          for i in $(seq 1 40); do
+            code=$(curl -s -o /tmp/health.json -w '%{http_code}' http://localhost:8080/api/health || true)
+            [ "$code" = "200" ] && break
+            sleep 3
+          done
+          cat /tmp/health.json; echo
+          if [ "$code" != "200" ]; then docker logs vulnex; exit 1; fi
+          grep -q '"schema"' /tmp/health.json
+      - name: A failing migration must stop the container
+        run: |
+          docker rm -f vulnex >/dev/null
+          set +e
+          docker run --rm --network host \
+            -e PORT=8081 -e VULNEX_SEED_SNAPSHOT=0 \
+            -e DATABASE_URL=postgresql://postgres:wrong@localhost:5432/vulnex_test \
+            vulnex-api:ci
+          echo "exit code: $?"

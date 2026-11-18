@@ -7,7 +7,7 @@
     <RootNamespace>Vulnex.Api</RootNamespace>
     <AssemblyName>Vulnex.Api</AssemblyName>
     <InvariantGlobalization>true</InvariantGlobalization>
-    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
 
   <ItemGroup>

@@ -32,14 +32,52 @@ def _emit(payload: Any) -> None:
     sys.stdout.flush()
 
 
+EXIT_DB_UNREACHABLE = 2  # the database could not be reached at all (maybe only for now)
+
+
+def _is_unreachable(exc: BaseException) -> bool:
+    """True when the chain holds a connection failure rather than a server-side error.
+
+    A server that answers with an error (bad privileges, a broken migration) always sets
+    an SQLSTATE; a refused, timed-out or unresolvable connection does not.
+    """
+    seen: set[int] = set()
+    while exc is not None and id(exc) not in seen:
+        seen.add(id(exc))
+        name = type(exc).__name__
+        if name == "OperationalError" and getattr(exc, "sqlstate", None) is None \
+                and getattr(getattr(exc, "orig", None), "sqlstate", None) is None:
+            return True
+        exc = exc.__cause__ or exc.__context__ or getattr(exc, "orig", None)
+    return False
+
+
 def _migrate() -> int:
+    """Exit 0 = schema at head, 2 = database unreachable, 1 = the migration itself failed."""
     from . import config, db
 
     seeded: Any = None
     if config.DATABASE_URL:
-        db.migrate_postgres()
+        try:
+            db.migrate_postgres()
+        except Exception as exc:
+            _emit({"ok": False, "error": str(exc)})
+            return EXIT_DB_UNREACHABLE if _is_unreachable(exc) else 1
         seeded = _seed_snapshot()
     _emit({"ok": True, "seeded": seeded})
+    return 0
+
+
+def _schema_head() -> int:
+    """The newest Alembic revision this build ships (what the database should be at)."""
+    from alembic.config import Config
+    from alembic.script import ScriptDirectory
+
+    from . import db
+
+    cfg = Config(str(db._BACKEND_DIR / "alembic.ini"))
+    cfg.set_main_option("script_location", str(db._BACKEND_DIR / "migrations"))
+    _emit({"head": ScriptDirectory.from_config(cfg).get_current_head()})
     return 0
 
 
@@ -142,7 +180,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="vulnex.engine_bridge")
     parser.add_argument(
         "command",
-        choices=["migrate", "enrich", "fixed-cves", "vuln-summary", "vuln-packages", "vuln-package", "scan"],
+        choices=["migrate", "schema-head", "enrich", "fixed-cves", "vuln-summary", "vuln-packages", "vuln-package", "scan"],
     )
     parser.add_argument("arg", nargs="?", default="")
     parser.add_argument("--refresh", action="store_true")
@@ -151,6 +189,8 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.command == "migrate":
             return _migrate()
+        if args.command == "schema-head":
+            return _schema_head()
         if args.command == "enrich":
             return _enrich(args.arg)
         if args.command == "fixed-cves":
