@@ -5,8 +5,8 @@
 | Technology | Used for | Why this one |
 |------------|----------|--------------|
 | **Python 3.11** | The whole backend and scanner | Good for text parsing and HTTP work |
-| **FastAPI** | HTTP API | Typed, fast to write, automatic request validation |
-| **Uvicorn** | Web server | Standard server for FastAPI |
+| **ASP.NET Core minimal APIs (.NET 10)** | HTTP API | Fast, typed, ships with its own web server (Kestrel) |
+| **Npgsql** | PostgreSQL driver for .NET | The only third-party package in the API |
 | **Pydantic** | Request bodies | Validation with clear errors |
 | **requests** | Calls to OSV, NVD, GitHub and others | Simple and reliable |
 | **SQLite** | Scan snapshot, local dev, tests | Zero setup, one file |

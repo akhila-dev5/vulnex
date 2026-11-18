@@ -30,3 +30,7 @@ site/
 frontend/node_modules/
 frontend/dist/
 *.tsbuildinfo
+
+# .NET
+bin/
+obj/

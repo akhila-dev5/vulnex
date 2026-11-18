@@ -1,0 +1,22 @@
+{
+ "body": {
+  "items": [
+   {
+    "affected_count": 4,
+    "branches": "3.0,4.0",
+    "duration_seconds": 1.5,
+    "ecosystem": "Azure Linux:3+Azure Linux:4",
+    "false_positive_count": 0,
+    "finding_count": 7,
+    "id": 1,
+    "message": "seed",
+    "package_count": 5,
+    "patched_count": 1,
+    "status": "success",
+    "unconfirmed_count": 0
+   }
+  ]
+ },
+ "path": "/api/scans",
+ "status": 200
+}

@@ -18,7 +18,7 @@ flowchart LR
 
     subgraph Live["Live site"]
         NET["Netlify<br/>React app"]
-        API["Render<br/>FastAPI"]
+        API["Render<br/>ASP.NET Core"]
         PG[("Supabase<br/>PostgreSQL")]
     end
 
@@ -36,7 +36,7 @@ flowchart LR
 | Part | Where it runs | Job |
 |------|---------------|-----|
 | React app | Netlify | The screens people see |
-| FastAPI service | Render (free) | Reads and writes data, signs people in, runs scans on demand |
+| ASP.NET Core service | Render (free) | Reads and writes data, signs people in, runs scans on demand |
 | PostgreSQL | Supabase (free) | Keeps scan results **and** what people type (comments, disputes, PR links) |
 | SQLite snapshot | Committed in the repo (`data/vulnex.db`) | The scanner's output; also the fallback when no database URL is set |
 | Scanner | GitHub Actions, daily | Collects specs, matches advisories, verifies, saves the snapshot |
@@ -49,7 +49,7 @@ The scanner produces a SQLite file because it is simple and needs no server. The
 
 1. The browser loads the React app from Netlify.
 2. The app asks `/api/stats` and `/api/findings?...`. Netlify forwards `/api/*` to Render, so the browser sees one site and CORS never matters.
-3. FastAPI checks an in-memory cache (60 seconds). On a miss it queries PostgreSQL with the filters applied in SQL, adds the triage and patch information for just the visible page, and returns compressed JSON.
+3. The .NET API checks an in-memory cache (60 seconds). On a miss it queries PostgreSQL with the filters applied in SQL, adds the triage and patch information for just the visible page, and returns compressed JSON.
 4. The app groups rows by CVE and draws the table.
 
 Clicking a CVE opens `#/cve/<id>`. That page calls `/api/cves/<id>` and shows every affected package with its Deep and Actions buttons.

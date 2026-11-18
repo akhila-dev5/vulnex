@@ -1,0 +1,7 @@
+{
+ "body": {
+  "detail": "Choose stable branch 3.0 or 4.0."
+ },
+ "path": "/api/stats?branch=9.9",
+ "status": 400
+}

@@ -28,7 +28,7 @@ The notes in [`docs/`](docs/README.md) explain the project one topic at a time:
 
 ## Built with
 
-Python, FastAPI, PostgreSQL / SQLite, React, TypeScript, Vite, GitHub Actions, Netlify, Render, Supabase.
+ASP.NET Core (.NET 10) API, Python scanner and automation, PostgreSQL, React, TypeScript, Vite, GitHub Actions, Netlify, Render, Supabase.
 
 ## License
 
