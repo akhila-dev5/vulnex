@@ -8,7 +8,7 @@ name: Vulnex automation
 #                                    branches and open PRs in azurelinux-test (see docs/10-automation.md)
 #   variable VULNEX_AUTOMATION_GITHUB_LOGIN  the automation account's GitHub username; the token must belong to it
 #   secret   VULNEX_AUTOMATION_KEY   the same value as VULNEX_AUTOMATION_KEY on the Render backend
-#   variable VULNEX_API_URL          e.g. https://vulnex-1k5h.onrender.com
+#   variable VULNEX_API_URL          e.g. https://vulnex-dotnet.onrender.com
 #   secret   VULNEX_AI_API_KEY       optional; without it the built-in GITHUB_TOKEN uses GitHub Models (free)
 on:
   schedule:

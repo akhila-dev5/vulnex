@@ -56,7 +56,7 @@ Repository **Settings > Secrets and variables > Actions** in the vulnex repo:
 | `AZL_TEST_TOKEN` | secret | A token **created while signed in as the automation GitHub account** (see below) that can push branches and open PRs in azurelinux-test |
 | `VULNEX_AUTOMATION_GITHUB_LOGIN` | variable | The automation account's GitHub username. The worker refuses a token that belongs to anyone else |
 | `VULNEX_AUTOMATION_KEY` | secret | Same value as `VULNEX_AUTOMATION_KEY` on Render |
-| `VULNEX_API_URL` | variable | `https://vulnex-1k5h.onrender.com` |
+| `VULNEX_API_URL` | variable | `https://vulnex-dotnet.onrender.com` |
 | `VULNEX_AI_API_KEY` | secret, optional | Only if you do not use GitHub Models |
 
 ### Who the PRs are credited to
