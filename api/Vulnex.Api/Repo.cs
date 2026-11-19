@@ -353,6 +353,12 @@ public static class Repo
         return Sql.One(c, "SELECT * FROM assignments WHERE cve_id = @c AND package_name = @p", ("c", cveId), ("p", packageName))!;
     }
 
+    /// <summary>Point an existing assignment at someone else (or nobody). Does nothing when there is no assignment row.</summary>
+    public static void SetAssignee(DbConnection c, string cveId, string packageName, string email) =>
+        Sql.Exec(c,
+            "UPDATE assignments SET assignee_email = @a, updated_at = @now WHERE cve_id = @c AND package_name = @p",
+            ("a", email), ("now", Sql.UtcNow()), ("c", cveId), ("p", packageName));
+
     public static List<Row> ListAssignments(DbConnection c)
     {
         var rows = Sql.Query(c, "SELECT * FROM assignments ORDER BY created_at DESC");

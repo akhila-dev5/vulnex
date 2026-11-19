@@ -439,17 +439,73 @@ describe("Claim and Workflows", () => {
     expect(JSON.parse(String(call.init?.body))).toMatchObject({ cve_id: "CVE-2026-1000" });
   });
 
-  it("disables Claim for a developer when someone else owns the package, and offers Release for their own", async () => {
-    vi.stubGlobal("fetch", stubFetch(listed({ owner: "other@example.org" })).fn);
+  it("offers Reclaim when someone else holds the package, and Release for your own", async () => {
+    const { fn, calls } = stubFetch({ ...listed({ owner: "other@example.org" }), "/triage/claim": { triage: {} } });
+    vi.stubGlobal("fetch", fn);
     const first = renderWith(me, <CvesPage />);
-    expect(await screen.findByRole("button", { name: /claimed by other@example.org/i })).toBeDisabled();
+    const reclaim = await screen.findByRole("button", { name: /^reclaim rabbitmq-server .*other@example.org/i });
+    expect(reclaim).toBeEnabled();
+    expect(reclaim).toHaveTextContent("Reclaim");
+    await userEvent.click(reclaim);
+    expect(calls.find((c) => c.url.pathname.endsWith("/triage/claim"))).toBeDefined();
     first.unmount();
     vi.stubGlobal("fetch", stubFetch(listed({ owner: "dev@example.org" })).fn);
     renderWith(me, <CvesPage />);
     expect(await screen.findByRole("button", { name: /^release rabbitmq-server/i })).toBeEnabled();
   });
 
-  it("has no claim column; a GitHub PR column links the PR, or shows a dash when there is none", async () => {
+  it("treats the administrator's assignment as the holder, even when nobody claimed it", async () => {
+    const assigned = { ...finding({}), assignment: { assignee_email: "other@example.org" } };
+    vi.stubGlobal("fetch", stubFetch({ "/findings": { items: [assigned], total: 1 }, "/stats": {} }).fn);
+    renderWith(me, <CvesPage />);
+    expect(await screen.findByRole("button", { name: /^reclaim rabbitmq-server .*other@example.org/i })).toBeEnabled();
+  });
+
+  it("only ever uses the words Claim, Reclaim and Release", async () => {
+    for (const triage of [undefined, { owner: "other@example.org" }, { owner: "dev@example.org" }]) {
+      vi.stubGlobal("fetch", stubFetch(listed(triage)).fn);
+      const view = renderWith(me, <CvesPage />);
+      const button = await screen.findByRole("button", { name: /rabbitmq-server/i });
+      expect(button.textContent?.trim()).toMatch(/^(Claim|Reclaim|Release)$/);
+      expect(screen.queryByText(/take over|^claimed$|^assigned$/i)).toBeNull();
+      view.unmount();
+    }
+  });
+
+  it("Release asks who gets the package; N/A needs a reason before it can be saved", async () => {
+    const { fn, calls } = stubFetch({ ...listed({ owner: "dev@example.org" }), "/triage/release": { triage: {} } });
+    vi.stubGlobal("fetch", fn);
+    renderWith(me, <CvesPage />);
+    await userEvent.click(await screen.findByRole("button", { name: /^release rabbitmq-server/i }));
+    const dialog = await screen.findByRole("dialog");
+    const choice = within(dialog).getByRole("combobox", { name: /who gets it/i });
+    expect(choice).toHaveValue("n/a");
+    const options = within(dialog).getAllByRole("option").map((o) => o.textContent ?? "");
+    expect(options[0]).toMatch(/^N\/A/);
+    expect(options.length).toBeGreaterThan(1); // the developers follow
+    const save = within(dialog).getByRole("button", { name: /^release$/i });
+    expect(save).toBeDisabled(); // N/A without a reason
+    await userEvent.type(within(dialog).getByLabelText(/reason for waiving/i), "Not shipped");
+    expect(save).toBeEnabled();
+    await userEvent.click(save);
+    const call = calls.find((c) => c.url.pathname.endsWith("/triage/release"))!;
+    expect(JSON.parse(String(call.init?.body))).toMatchObject({ cve_id: "CVE-2026-1000", assign_to: "n/a", reason: "Not shipped" });
+  });
+
+  it("Release to a developer needs no reason and sends that developer", async () => {
+    const { fn, calls } = stubFetch({ ...listed({ owner: "dev@example.org" }), "/triage/release": { triage: {} } });
+    vi.stubGlobal("fetch", fn);
+    renderWith(me, <CvesPage />);
+    await userEvent.click(await screen.findByRole("button", { name: /^release rabbitmq-server/i }));
+    const dialog = await screen.findByRole("dialog");
+    await userEvent.selectOptions(within(dialog).getByRole("combobox", { name: /who gets it/i }), "dev1.vulnex@gmail.com");
+    expect(within(dialog).queryByLabelText(/reason for waiving/i)).toBeNull();
+    await userEvent.click(within(dialog).getByRole("button", { name: /^release$/i }));
+    const call = calls.find((c) => c.url.pathname.endsWith("/triage/release"))!;
+    expect(JSON.parse(String(call.init?.body))).toMatchObject({ assign_to: "dev1.vulnex@gmail.com", reason: "" });
+  });
+
+  it("has no claim or held column; a GitHub PR column links the PR, or shows a dash when there is none", async () => {
     const pr = { github_pr_number: "42", github_pr_url: "https://github.com/akhila-dev5/azurelinux-test/pull/42" };
     const mk = (name: string, via: "claimed" | "assigned", triage: Record<string, string>) =>
       ({ ...finding({ package_name: name, triage: { owner: "dev@example.org", ...triage } }), held_via: via });
@@ -458,11 +514,10 @@ describe("Claim and Workflows", () => {
     renderWith(me, <WorkflowsPage />);
     await screen.findByText("openssh");
     expect(screen.getAllByRole("columnheader").map((h) => h.textContent)).toEqual(
-      ["CVE", "Package", "Scanned", "Branch", "Held", "Triage status", "Resolution status", "GitHub PR"],
+      ["CVE", "Package", "Scanned", "Branch", "Triage status", "Resolution status", "GitHub PR"],
     );
     expect(screen.queryByRole("button", { name: /claim|release|take over/i })).toBeNull();
-    expect(screen.getByText("Assigned")).toBeInTheDocument(); // the Held column still says how
-    expect(screen.getByText("Claimed")).toBeInTheDocument();
+    expect(screen.queryByText(/^(assigned|claimed)$/i)).toBeNull(); // no ownership tags in the table
     const link = screen.getByRole("link", { name: "#42" });
     expect(link).toHaveAttribute("href", pr.github_pr_url);
     expect(link).toHaveAttribute("target", "_blank");
@@ -495,7 +550,6 @@ describe("Claim and Workflows", () => {
     expect(headings[1]).toMatch(/^alpha@example.org/);
     expect(headings[2]).toMatch(/^zed@example.org/);
     expect(screen.getByText("curl")).toBeInTheDocument();
-    expect(screen.getByText("Assigned")).toBeInTheDocument();
     expect(screen.getByText(/2 packages held across 3 developers/)).toBeInTheDocument();
   });
 });

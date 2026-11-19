@@ -567,30 +567,67 @@ public static class Endpoints
             return Ok(new Row { ["triage"] = record });
         });
 
+        // Who holds a package: the administrator's assignment if there is one, otherwise whoever claimed it
+        // (the same rule Workflows and the CVE pages use). Returns the package name too.
+        static (string Package, string Holder) HeldBy(DbConnection conn, string cveId, string branch, string specPath)
+        {
+            var finding = Repo.GetFindingAt(conn, cveId, branch, specPath)
+                          ?? throw new HttpError(404, "Finding not found");
+            var package = finding.Str("package_name");
+            var assigned = Trimmed(Sql.One(conn, "SELECT assignee_email FROM assignments WHERE cve_id = @c AND package_name = @p",
+                ("c", cveId), ("p", package))?.Str("assignee_email")).ToLowerInvariant();
+            var claimed = Trimmed(Repo.GetTriage(conn, cveId, branch, specPath)?.Str("owner")).ToLowerInvariant();
+            return (package, assigned.Length > 0 ? assigned : claimed);
+        }
+
+        // Claim: nobody holds it. Reclaim: someone else does and this developer takes it. Same call; the
+        // holder is replaced, in both the claim and the administrator's assignment, so the two never disagree.
         app.MapPost("/api/triage/claim", async (HttpRequest req, IDbFactory db, AuthService auth) =>
         {
-            var (role, me) = auth.RequireClaimer(req);
+            var (_, me) = auth.RequireClaimer(req);
             var payload = await Body<FindingRef>(req);
             var cveId = payload.CveId.ToUpperInvariant();
             using var conn = db.Open();
-            var current = Trimmed(Repo.GetTriage(conn, cveId, payload.Branch, payload.SpecPath)?.Str("owner"));
-            if (current.Length > 0 && current.ToLowerInvariant() != me && role != Cfg.RoleAdmin)
-                throw new HttpError(409, $"Already claimed by {current}.");
+            var (package, holder) = HeldBy(conn, cveId, payload.Branch, payload.SpecPath);
+            if (holder == me)
+                return Ok(new Row { ["triage"] = Repo.GetTriage(conn, cveId, payload.Branch, payload.SpecPath) ?? new Row(), ["previous_owner"] = holder });
             var record = Repo.UpsertTriage(conn, cveId, payload.Branch, payload.SpecPath, new Dictionary<string, object?> { ["owner"] = me });
-            return Ok(new Row { ["triage"] = record });
+            Repo.SetAssignee(conn, cveId, package, me);
+            // Taking a package from someone leaves a record, so the previous holder can see what happened.
+            if (holder.Length > 0)
+                Repo.AddFindingComment(conn, cveId, payload.Branch, payload.SpecPath, $"Reclaimed by {me} from {holder}.", me, "reclaim");
+            return Ok(new Row { ["triage"] = record, ["previous_owner"] = holder });
         });
 
+        // Release: only the holder (or the administrator) can. The package goes to a developer from the
+        // assignment list, or to nobody ("N/A"), which needs a reason. Handing a package on is the one
+        // time a developer may assign; assigning in general stays with the administrator.
         app.MapPost("/api/triage/release", async (HttpRequest req, IDbFactory db, AuthService auth) =>
         {
             var (role, me) = auth.RequireClaimer(req);
-            var payload = await Body<FindingRef>(req);
+            var payload = await Body<ReleaseRequest>(req);
             var cveId = payload.CveId.ToUpperInvariant();
+            var target = Trimmed(payload.AssignTo).ToLowerInvariant();
+            var nobody = target.Length == 0 || target == "n/a";
+            var reason = Trimmed(payload.Reason);
+            if (nobody && reason.Length == 0) throw new HttpError(400, "Give a reason for waiving this CVE.");
+            if (reason.Length > 2000) throw new HttpError(400, "Keep the reason under 2000 characters.");
+            if (!nobody && !Roles.AssignableEmails.Contains(target))
+                throw new HttpError(400, "Choose a developer from the list.");
             using var conn = db.Open();
-            var current = Trimmed(Repo.GetTriage(conn, cveId, payload.Branch, payload.SpecPath)?.Str("owner"));
-            if (current.Length > 0 && current.ToLowerInvariant() != me && role != Cfg.RoleAdmin)
-                throw new HttpError(409, $"Claimed by {current}; only they or the administrator can release it.");
-            var record = Repo.UpsertTriage(conn, cveId, payload.Branch, payload.SpecPath, new Dictionary<string, object?> { ["owner"] = "" });
-            return Ok(new Row { ["triage"] = record });
+            var (package, holder) = HeldBy(conn, cveId, payload.Branch, payload.SpecPath);
+            if (holder.Length == 0) throw new HttpError(409, "Nobody holds this package, so there is nothing to release.");
+            if (holder != me && role != Cfg.RoleAdmin)
+                throw new HttpError(409, $"Held by {holder}; only they or the administrator can release it.");
+            if (!nobody && target == holder) throw new HttpError(400, "That developer already holds this package.");
+            var newOwner = nobody ? "" : target;
+            var record = Repo.UpsertTriage(conn, cveId, payload.Branch, payload.SpecPath, new Dictionary<string, object?> { ["owner"] = newOwner });
+            Repo.SetAssignee(conn, cveId, package, newOwner);
+            var note = nobody
+                ? $"Released by {me} with no owner (N/A). Reason: {reason}"
+                : $"Released by {me} to {target}." + (reason.Length > 0 ? $" Note: {reason}" : "");
+            var comment = Repo.AddFindingComment(conn, cveId, payload.Branch, payload.SpecPath, note, me, "release");
+            return Ok(new Row { ["triage"] = record, ["owner"] = newOwner, ["comment"] = comment });
         });
 
         app.MapGet("/api/workflows", (HttpRequest req, IDbFactory db, AuthService auth) =>

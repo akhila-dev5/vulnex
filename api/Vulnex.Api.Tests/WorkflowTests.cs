@@ -332,7 +332,7 @@ public class WorkflowTests
         Assert.Equal("claimed", seen.At("groups.1.items.0.held_via").Text());
 
         // the administrator's email sorts before "dev.*", yet the signed-in account still leads
-        await Merge("/api/triage/release", new { }, _dev);
+        await Merge("/api/triage/release", new { assign_to = "n/a", reason = "Not needed" }, _dev);
         await Merge("/api/triage/claim", new { }, _admin);
         var again = await _c.Get("/api/workflows", _dev);
         Assert.Equal(Who.Dev, again.At("groups.0.owner").Text());
@@ -351,26 +351,103 @@ public class WorkflowTests
     }
 
     [Fact]
-    public async Task A_claimed_package_cannot_be_taken_by_someone_else_but_the_admin_may_take_over()
+    public async Task Another_developer_can_reclaim_a_package_and_the_previous_holder_loses_it()
     {
         await Merge("/api/triage/claim", new { }, _dev);
         var taken = await Merge("/api/triage/claim", new { }, _other);
-        Assert.Equal(409, taken.Code);
-        Assert.Contains(Who.Dev, taken.At("detail").Text());
-        Assert.Equal(409, (await Merge("/api/triage/release", new { }, _other)).Code);
-
-        Assert.Equal(200, (await Merge("/api/triage/claim", new { }, _dev)).Code);
-        Assert.Equal(200, (await Merge("/api/triage/claim", new { }, _admin)).Code);
-        Assert.Equal(Cfg.AdminEmail, (await FindingRow()).At("items.0.triage.owner").Text());
+        Assert.Equal(200, taken.Code);
+        Assert.Equal(Who.Dev, taken.At("previous_owner").Text());
+        Assert.Equal(Who.Other, (await FindingRow()).At("items.0.triage.owner").Text());
+        Assert.Equal(0, (await _c.Get("/api/workflows", _dev)).At("groups.0.total").Number());
+        Assert.Equal(Who.Other, (await _c.Get("/api/workflows", _dev)).At("groups.1.owner").Text());
+        // taking it from someone leaves a record
+        var log = await _c.Get($"/api/triage/comments?cve_id={FindingCve}&branch=3.0&spec_path=SPECS/beta/beta.spec");
+        Assert.Single(log.At("items")!.AsArray());
+        Assert.Equal("reclaim", log.At("items.0.kind").Text());
+        Assert.Contains(Who.Dev, log.At("items.0.body").Text());
+        // claiming what you already hold changes nothing, and adds no second record
+        Assert.Equal(200, (await Merge("/api/triage/claim", new { }, _other)).Code);
+        Assert.Single((await _c.Get($"/api/triage/comments?cve_id={FindingCve}&branch=3.0&spec_path=SPECS/beta/beta.spec")).At("items")!.AsArray());
     }
 
     [Fact]
-    public async Task Release_clears_the_owner()
+    public async Task Reclaiming_an_assigned_package_moves_the_assignment_too()
+    {
+        await _c.Post("/api/assignments", new { cve_id = FindingCve, package_name = "beta", assignee_email = "dev1.vulnex@gmail.com" }, _admin);
+        Assert.Equal(200, (await Merge("/api/triage/claim", new { }, _dev)).Code);
+        var row = await FindingRow();
+        Assert.Equal(Who.Dev, row.At("items.0.assignment.assignee_email").Text());
+        var mine = await _c.Get("/api/workflows", _dev);
+        Assert.Equal(1, mine.At("groups.0.total").Number());
+        Assert.Equal(1, mine.At("total").Number()); // held once, not by both people
+    }
+
+    [Fact]
+    public async Task Claiming_a_finding_that_does_not_exist_is_refused()
+    {
+        var reply = await _c.Post("/api/triage/claim", new { cve_id = "CVE-1999-0000", branch = "3.0", spec_path = "SPECS/none/none.spec" }, _dev);
+        Assert.Equal(404, reply.Code);
+    }
+
+    [Fact]
+    public async Task Release_to_nobody_needs_a_reason_and_records_it()
     {
         await Merge("/api/triage/claim", new { }, _dev);
-        Assert.Equal(200, (await Merge("/api/triage/release", new { }, _dev)).Code);
-        Assert.Equal(0, (await _c.Get("/api/workflows", _dev)).At("total").Number());
+        Assert.Equal(400, (await Merge("/api/triage/release", new { assign_to = "N/A" }, _dev)).Code);
+        Assert.Equal(400, (await Merge("/api/triage/release", new { assign_to = "", reason = "   " }, _dev)).Code);
+        Assert.Equal(Who.Dev, (await FindingRow()).At("items.0.triage.owner").Text()); // still held after the refusals
+
+        var done = await Merge("/api/triage/release", new { assign_to = "N/A", reason = "Not shipped in our image" }, _dev);
+        Assert.Equal(200, done.Code);
+        Assert.Equal("", done.At("owner").Text());
         Assert.Equal("", (await FindingRow()).At("items.0.triage.owner").Text());
+        Assert.Equal(0, (await _c.Get("/api/workflows", _dev)).At("total").Number());
+        var comments = await _c.Get($"/api/triage/comments?cve_id={FindingCve}&branch=3.0&spec_path=SPECS/beta/beta.spec");
+        Assert.Equal("release", comments.At("items.0.kind").Text());
+        Assert.Contains("Not shipped in our image", comments.At("items.0.body").Text());
+    }
+
+    [Fact]
+    public async Task Release_to_a_developer_hands_the_package_over()
+    {
+        await Merge("/api/triage/claim", new { }, _dev);
+        var done = await Merge("/api/triage/release", new { assign_to = "dev2.vulnex@gmail.com" }, _dev);
+        Assert.Equal(200, done.Code);
+        Assert.Equal("dev2.vulnex@gmail.com", (await FindingRow()).At("items.0.triage.owner").Text());
+        var seen = await _c.Get("/api/workflows", _dev);
+        Assert.Equal(0, seen.At("groups.0.total").Number()); // no longer mine
+        Assert.Equal("dev2.vulnex@gmail.com", seen.At("groups.1.owner").Text());
+        Assert.Equal(1, seen.At("groups.1.total").Number());
+    }
+
+    [Fact]
+    public async Task Release_can_only_hand_a_package_to_someone_on_the_list_and_not_to_the_holder()
+    {
+        await Merge("/api/triage/claim", new { }, _dev);
+        Assert.Equal(400, (await Merge("/api/triage/release", new { assign_to = "stranger@example.org" }, _dev)).Code);
+        Assert.Equal(400, (await Merge("/api/triage/release", new { assign_to = Who.Dev }, _dev)).Code);
+        Assert.Equal(Who.Dev, (await FindingRow()).At("items.0.triage.owner").Text());
+    }
+
+    [Fact]
+    public async Task Only_the_holder_or_the_admin_can_release_and_an_unheld_package_has_nothing_to_release()
+    {
+        Assert.Equal(409, (await Merge("/api/triage/release", new { assign_to = "n/a", reason = "x" }, _dev)).Code);
+        await Merge("/api/triage/claim", new { }, _dev);
+        var refused = await Merge("/api/triage/release", new { assign_to = "n/a", reason = "x" }, _other);
+        Assert.Equal(409, refused.Code);
+        Assert.Contains(Who.Dev, refused.At("detail").Text());
+        Assert.Equal(200, (await Merge("/api/triage/release", new { assign_to = "n/a", reason = "Admin cleanup" }, _admin)).Code);
+    }
+
+    [Fact]
+    public async Task Release_also_clears_an_administrator_assignment()
+    {
+        await _c.Post("/api/assignments", new { cve_id = FindingCve, package_name = "beta", assignee_email = Cfg.AdminEmail }, _admin);
+        Assert.Equal(1, (await _c.Get("/api/workflows", _admin)).At("total").Number());
+        Assert.Equal(200, (await Merge("/api/triage/release", new { assign_to = "n/a", reason = "Wrong owner" }, _admin)).Code);
+        Assert.Equal(0, (await _c.Get("/api/workflows", _admin)).At("total").Number());
+        Assert.Equal("", (await FindingRow()).At("items.0.assignment.assignee_email").Text());
     }
 
     // -- rescoring -----------------------------------------------------------

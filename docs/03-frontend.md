@@ -11,7 +11,7 @@ There are five pages, chosen by the part of the URL after `#`.
 | `#/` | CVEs (`CvesPage.tsx`) | Filter sidebar, four summary cards, findings grouped by CVE. Each CVE has a chevron that opens its package rows (collapsed by default, plus Expand all / Collapse all). Columns include **Scanned**, the date the finding first appeared |
 | `#/packages` | Packages (`PackagesPage.tsx`) | Every scanned package and its version |
 | `#/disputes` | Disputes (`DisputesPage.tsx`) | Every dispute request in Pending / Approved / Rejected tabs; the admin approves or rejects here |
-| `#/workflows` | Workflows (`WorkflowsPage.tsx`) | Every developer's packages (claimed or assigned), one section per email: the signed-in account first, then the rest alphabetically. It is read-only: a "Held" column says Claimed or Assigned, and there is no claim or action column, because claiming and releasing are done on the CVEs page. The last column, "GitHub PR", links the PR set for the CVE (or shows a dash). Visitors see a message that only developers can see it |
+| `#/workflows` | Workflows (`WorkflowsPage.tsx`) | Every developer's packages (claimed or assigned), one section per email: the signed-in account first, then the rest alphabetically. It is read-only: there is no claim or action column, because claiming, reclaiming and releasing are done on the CVEs page. The columns are CVE, Package, Scanned, Branch, Triage status, Resolution status and "GitHub PR" (links the PR set for the CVE, or shows a dash). Visitors see a message that only developers can see it |
 | `#/automation` | Automation (`AutomationPage.tsx`, `AutomateModal.tsx`) | The automation account's Patch Available CVEs, one card per package with a CVE dropdown and an Automate button. The pop-up has a CVE checklist and a choice of new PR or an existing PR (asks for its number). Visitors see a message that only developers can see it |
 | `#/cve/<id>` | CVE detail (`CveDetailPage.tsx`) | The CVE, severity box, tracker links, and a table of every affected package |
 
@@ -21,7 +21,7 @@ Each row on the CVE detail page has a **Deep** button, an **Actions** menu and a
 
 **Rescore** (admin) opens a form with a CVSS score, a severity (suggested from the score) and a required reason. The Severity box on the CVE page then shows the new values and a note with who rescored it and why; the scanned values are kept.
 
-**Claim** (`ClaimButton.tsx`): every package row has a Claim button. It assigns the package to the signed-in Google account (the Owner column). Visitors see it disabled. A package claimed by someone else shows a disabled "Claimed" for developers; the owner sees Release, and the admin sees Take over.
+**Claim / Reclaim / Release** (`ClaimButton.tsx`): every package row has exactly one of three buttons, and these are the only three actions on a package's owner. **Claim** shows when nobody holds the package. **Reclaim** shows when someone else holds it and you want it. **Release** shows when you hold it; it opens a dialog (`ReleaseModal.tsx`) with a "Who gets it?" list of N/A and the developers. Choosing N/A requires a reason for waiving, which is saved as a comment; choosing a developer hands the package to them. Visitors see the button disabled.
 
 A dispute goes: developer raises it → it appears under **Disputes** as Pending (the package shows "Pending dispute") → the admin approves → the package's resolution status becomes **Disputed** and the reason shows under the package ("Approved dispute"). A rejected dispute changes nothing on the package.
 

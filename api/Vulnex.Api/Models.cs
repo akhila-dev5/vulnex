@@ -38,6 +38,13 @@ public class FindingRef
     public string SpecPath { get; set; } = "";
 }
 
+/// <summary>Release a held package: hand it to a developer (<c>assign_to</c>) or to nobody ("N/A") with a reason.</summary>
+public sealed class ReleaseRequest : FindingRef
+{
+    public string? AssignTo { get; set; }
+    public string? Reason { get; set; }
+}
+
 public sealed class DisputeRequest : FindingRef
 {
     public required string Reason { get; set; }
