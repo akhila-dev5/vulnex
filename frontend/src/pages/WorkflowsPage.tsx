@@ -8,12 +8,11 @@ import { findingKey, resolutionOf, triageStatusOf } from "../lib/findings";
 import { formatDayMonth, statusLabel, statusTone } from "../lib/labels";
 import { hrefFor } from "../lib/route";
 
-type WorkflowItem = Finding & { held_via?: "assigned" | "claimed" };
-type WorkflowGroup = { owner: string; total: number; items: WorkflowItem[] };
+type WorkflowGroup = { owner: string; total: number; items: Finding[] };
 type WorkflowList = { me: string; total: number; groups: WorkflowGroup[] };
 
 /**
- * Every developer's packages, claimed or assigned by the administrator: the signed-in
+ * Every developer's packages: the signed-in
  * account first, then everyone else alphabetically. Visitors are told it is for developers; the server refuses them as well.
  */
 export function WorkflowsPage() {
@@ -63,7 +62,7 @@ export function WorkflowsPage() {
           <h1>Workflows</h1>
           <p>
             {data
-              ? `${data.total} package${data.total === 1 ? "" : "s"} held across ${groups.length} developer${groups.length === 1 ? "" : "s"}, claimed or assigned. Claim a package from the CVEs page to track it here.`
+              ? `${data.total} package${data.total === 1 ? "" : "s"} held across ${groups.length} developer${groups.length === 1 ? "" : "s"}. Claim a package from the CVEs page to track it here.`
               : "The packages each developer holds."}
           </p>
         </div>
@@ -96,7 +95,6 @@ export function WorkflowsPage() {
                       <th>Package</th>
                       <th>Scanned</th>
                       <th>Branch</th>
-                      <th>Held</th>
                       <th>Triage status</th>
                       <th>Resolution status</th>
                       <th>GitHub PR</th>
@@ -116,7 +114,6 @@ export function WorkflowsPage() {
                         </td>
                         <td>{formatDayMonth(row.first_seen)}</td>
                         <td><code>{row.branch}</code></td>
-                        <td>{row.held_via === "assigned" ? "Assigned" : "Claimed"}</td>
                         <td><StatusPill tone={statusTone(triageStatusOf(row))}>{statusLabel(triageStatusOf(row))}</StatusPill></td>
                         <td><StatusPill tone={statusTone(resolutionOf(row))}>{statusLabel(resolutionOf(row))}</StatusPill></td>
                         <td>

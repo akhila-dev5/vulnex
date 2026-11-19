@@ -3,26 +3,35 @@ import { HandHelping, Undo2 } from "lucide-react";
 import { messageOf, request } from "../api/client";
 import type { Finding } from "../api/types";
 import { useApp } from "../app-context";
+import { ReleaseModal } from "./ReleaseModal";
+
+/** Who holds a package: the administrator's assignment if there is one, otherwise whoever claimed it. */
+export function holderOf(finding: Finding): string {
+  return (finding.assignment?.assignee_email || finding.triage?.owner || "").trim().toLowerCase();
+}
 
 /**
- * "Claim" a package: its CVE is assigned to the signed-in Google account.
+ * The only three actions on a package's owner, shown as one button:
+ *  - Claim: nobody holds it.
+ *  - Reclaim: someone else holds it and you take it.
+ *  - Release: you hold it; a dialog asks who gets it, or "N/A" with a reason.
  *
- * Everyone sees the button, but only developers and the administrator can use it; for
- * visitors it stays disabled. The server checks the sign-in too, so hiding it is not the protection.
+ * Everyone sees the button, but only developers and the administrator can use it; for visitors it stays
+ * disabled. The server checks the sign-in too, so hiding it is not the protection.
  */
 export function ClaimButton({ finding, onChanged }: { finding: Finding; onChanged: () => void }) {
-  const { token, roleInfo, canAdmin, canContribute, notify } = useApp();
+  const { token, roleInfo, canContribute, notify } = useApp();
   const [busy, setBusy] = useState(false);
-  const owner = (finding.triage?.owner ?? "").trim();
+  const [releasing, setReleasing] = useState(false);
+  const holder = holderOf(finding);
   const me = (roleInfo.identity?.email ?? roleInfo.identity?.identity ?? "").trim().toLowerCase();
-  const mine = owner !== "" && owner.toLowerCase() === me;
   const label = `${finding.package_name} ${finding.package_version ?? ""}`.trim();
 
-  const send = async (path: "/triage/claim" | "/triage/release", done: string) => {
+  const claim = async (done: string) => {
     setBusy(true);
     try {
       await request(
-        path,
+        "/triage/claim",
         { method: "POST", body: JSON.stringify({ cve_id: finding.cve_id, branch: finding.branch ?? "", spec_path: finding.spec_path ?? "" }) },
         token,
       );
@@ -42,23 +51,42 @@ export function ClaimButton({ finding, onChanged }: { finding: Finding; onChange
       </button>
     );
   }
-  if (mine) {
+  if (holder !== "" && holder === me) {
     return (
-      <button className="btn claim-btn" disabled={busy} onClick={() => void send("/triage/release", "Released")} aria-label={`Release ${label}`} title="You claimed this package. Click to give it back.">
-        <Undo2 size={14} aria-hidden="true" /> Release
-      </button>
+      <>
+        <button className="btn claim-btn" disabled={busy} onClick={() => setReleasing(true)} aria-label={`Release ${label}`} title="You hold this package. Give it to someone else, or mark it N/A.">
+          <Undo2 size={14} aria-hidden="true" /> Release
+        </button>
+        {releasing && (
+          <ReleaseModal
+            finding={finding}
+            me={me}
+            onClose={() => setReleasing(false)}
+            onReleased={() => {
+              setReleasing(false);
+              onChanged();
+            }}
+          />
+        )}
+      </>
     );
   }
-  if (owner && !canAdmin) {
+  if (holder !== "") {
     return (
-      <button className="btn claim-btn" disabled title={`Already claimed by ${owner}`} aria-label={`${label} is claimed by ${owner}`}>
-        Claimed
+      <button
+        className="btn claim-btn primary"
+        disabled={busy}
+        onClick={() => void claim(`Reclaimed from ${holder}. It now appears under Workflows.`)}
+        aria-label={`Reclaim ${label} from ${holder}`}
+        title={`Held by ${holder}. Click to take it.`}
+      >
+        <HandHelping size={14} aria-hidden="true" /> Reclaim
       </button>
     );
   }
   return (
-    <button className="btn claim-btn primary" disabled={busy} onClick={() => void send("/triage/claim", "Claimed. It now appears under Workflows.")} aria-label={`Claim ${label}`}>
-      <HandHelping size={14} aria-hidden="true" /> {owner ? "Take over" : "Claim"}
+    <button className="btn claim-btn primary" disabled={busy} onClick={() => void claim("Claimed. It now appears under Workflows.")} aria-label={`Claim ${label}`}>
+      <HandHelping size={14} aria-hidden="true" /> Claim
     </button>
   );
 }
